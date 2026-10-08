@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>단발 용돈룰렛 관리 시스템</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Top Global Bar -->
+    <header class="top-nav">
+        <div class="nav-left">
+            <button id="btn-broadcast-toggle" class="btn-pill btn-start" title="방송 시작/종료">
+                <i class="fa-solid fa-play"></i> <span id="broadcast-status-text">시작</span>
+            </button>
+            <div id="broadcast-timer-badge" class="timer-badge hide">
+                <span class="timer-dot"></span>
+                <span id="broadcast-elapsed-timer">00:00:00</span>
+            </div>
+            
+            <button id="btn-reset-contribution" class="btn-pill btn-contrib-reset" title="스트리머들의 현재 기여도를 0으로 초기화 (이전 기록과 총합은 유지)">
+                <i class="fa-solid fa-arrows-rotate"></i> 기여도 초기화
+            </button>
+
+            <button id="btn-save-project" class="btn-pill btn-save">
+                <i class="fa-solid fa-floppy-disk"></i> 프로젝트 저장
+            </button>
+
+            <div class="nav-checkboxes">
+                <label class="custom-checkbox">
+                    <input type="checkbox" id="chk-show-zero" checked>
+                    <span class="label-text">0점 스트리머 표시</span>
+                </label>
+                <label class="custom-checkbox">
+                    <input type="checkbox" id="chk-show-total" checked>
+                    <span class="label-text">총합 표시</span>
+                </label>
+            </div>
+
+            <button id="btn-export-excel" class="btn-pill btn-excel" title="풍 개수 및 기여도 다중 시트 엑셀 다운로드">
+                <i class="fa-solid fa-file-excel"></i> 엑셀
+            </button>
+        </div>
+
+        <div class="nav-right">
+            <!-- Editable Round Name Badge -->
+            <div class="round-editor-badge" title="클릭하여 라운드 이름을 직접 수정할 수 있습니다 (입력 후 Enter 또는 밖을 클릭)">
+                <i class="fa-solid fa-flag-checkered text-blue"></i>
+                <span class="round-prefix">라운드:</span>
+                <input type="text" id="round-name-input" class="round-input" value="1라운드" placeholder="라운드명 입력">
+            </div>
+
+            <button id="btn-open-streamers" class="btn-pill btn-outline">
+                <i class="fa-solid fa-tags"></i> 스트리머 및 키워드 설정
+            </button>
+            <button id="btn-open-sync" class="btn-pill btn-outline">
+                <i class="fa-solid fa-satellite-dish"></i> 위플랩/점수판 연동
+            </button>
+            <div id="flabs-status-pill" class="flabs-status-pill" title="score.flabs.kr 점수판 창을 열어두시면 시작시점 이후 변화량을 실시간 비교합니다">
+                <i class="fa-solid fa-scale-balanced"></i>
+                <span id="flabs-status-text">점수판 대기중</span>
+            </div>
+            <!-- Project Save & Load -->
+            <button id="btn-save-project" class="btn-pill btn-outline" title="현재 전체 후원 및 스트리머 설정을 백업 파일(.json)로 저장">
+                <i class="fa-solid fa-floppy-disk"></i> 프로젝트 저장
+            </button>
+            <button id="btn-load-project" class="btn-pill btn-outline" title="이전에 저장한 프로젝트 백업 파일(.json)을 불러옵니다">
+                <i class="fa-solid fa-folder-open"></i> 프로젝트 불러오기
+            </button>
+            <input type="file" id="project-file-input" accept=".json" style="display:none;">
+            <div class="user-badge">
+                <i class="fa-solid fa-circle-check text-green"></i>
+                <span id="user-display-name">단발 용돈룰렛</span>
+            </div>
+            <button id="btn-clear-all" class="btn-pill btn-danger" title="모든 후원 데이터 영구 초기화">
+                <i class="fa-solid fa-trash-can"></i> 전체삭제
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+        <!-- Live Summary Scoreboard -->
+        <section id="scoreboard-section" class="scoreboard-section">
+            <div class="scoreboard-header">
+                <div class="header-title-group">
+                    <h3><i class="fa-solid fa-chart-line"></i> 실시간 스트리머별 기여도 및 풍 현황</h3>
+                    <span class="main-metric-badge">★ 웹 화면 메인: <b>기여도(룰렛 숫자)</b> (예시 데이터는 합계에서 자동 제외됨)</span>
+                </div>
+                <div class="live-clock-badge">
+                    <i class="fa-regular fa-clock"></i> 서울 시각: <span id="current-seoul-time">--:--:--</span>
+                </div>
+            </div>
+            <div id="streamer-cards-container" class="streamer-cards-container">
+                <!-- Dynamically rendered streamer score cards -->
+            </div>
+        </section>
+
+        <!-- Alert Donation List Table -->
+        <section class="table-section">
+            <div class="table-header-info">
+                <div class="info-texts">
+                    <p><i class="fa-solid fa-circle-info text-blue"></i> <b>후원 자동 기록:</b> 방송 중 위플랩(weflab.com/alertlist)에서 후원/룰렛이 발생하면 실시간으로 자동 기록됩니다.</p>
+                    <p><i class="fa-solid fa-circle-info text-blue"></i> <b>직접 수정:</b> 풍 개수, 기여도 숫자, +/- 부호, 스트리머, 메모 등 모든 항목을 테이블에서 즉시 직접 수정할 수 있습니다.</p>
+                </div>
+                <div class="table-actions">
+                    <button id="btn-clear-examples" class="btn-sub-action btn-example-del hide" title="[예시]로 표시된 샘플 데이터를 테이블에서 모두 제거합니다">
+                        <i class="fa-solid fa-trash"></i> 예시 데이터 삭제
+                    </button>
+                    <button id="btn-scroll-bottom" class="btn-sub-action">
+                        <i class="fa-solid fa-angles-down"></i> 최신 후원 보기
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table Wrapper -->
+            <div class="table-wrapper">
+                <table class="roulette-table" id="roulette-table">
+                    <thead>
+                        <tr>
+                            <th class="th-time">시간</th>
+                            <th class="th-id">아이디</th>
+                            <th class="th-nickname">닉네임</th>
+                            <th class="th-chat">채팅 및 룰렛</th>
+                            <th class="th-streamer">스트리머</th>
+                            <th class="th-balloons">개수 (풍)</th>
+                            <th class="th-contrib">기여도 (룰렛)</th>
+                            <th class="th-multiplier">원플원/배수</th>
+                            <th class="th-memo">메모</th>
+                            <th class="th-action">관리</th>
+                        </tr>
+                        <!-- Manual Entry Row -->
+                        <tr class="manual-add-row">
+                            <td class="td-time">
+                                <span class="badge-now" id="manual-now-badge">현재시간</span>
+                            </td>
+                            <td class="td-id">
+                                <input type="text" id="manual-id" placeholder="아이디" class="table-input">
+                            </td>
+                            <td class="td-nickname">
+                                <input type="text" id="manual-nickname" placeholder="닉네임" class="table-input">
+                            </td>
+                            <td class="td-chat">
+                                <input type="text" id="manual-chat" placeholder="채팅 메시지 또는 룰렛결과 (예: (0.6%) 1812 체온플)" class="table-input">
+                            </td>
+                            <td class="td-streamer">
+                                <select id="manual-streamer" class="table-select">
+                                    <option value="선택">선택</option>
+                                </select>
+                            </td>
+                            <td class="td-balloons">
+                                <input type="number" id="manual-balloons" placeholder="풍 개수" class="table-input text-right font-bold">
+                            </td>
+                            <td class="td-contrib">
+                                <div class="contrib-input-group">
+                                    <button type="button" id="manual-sign-btn" class="btn-sign-toggle plus">+</button>
+                                    <input type="number" id="manual-contrib-val" placeholder="기여도" class="table-input contrib-val font-bold">
+                                </div>
+                            </td>
+                            <td class="td-multiplier">
+                                <select id="manual-multiplier" class="table-select">
+                                    <option value="기본배수">기본배수</option>
+                                    <option value="원플원">원플원</option>
+                                    <option value="2배">2배</option>
+                                    <option value="3배">3배</option>
+                                    <option value="5배">5배</option>
+                                </select>
+                            </td>
+                            <td class="td-memo">
+                                <input type="text" id="manual-memo" placeholder="메모 입력" class="table-input">
+                            </td>
+                            <td class="td-action">
+                                <button id="btn-manual-add" class="btn-add-donation">
+                                    <i class="fa-solid fa-plus"></i> 추가
+                                </button>
+                            </td>
+                        </tr>
+                    </thead>
+                    <tbody id="alerts-tbody">
+                        <!-- Alert Rows rendered via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Streamer & Keyword Management Modal (example.3 style without -keyword) -->
+    <div id="modal-streamers" class="modal-overlay hide">
+        <div class="modal-box modal-xl">
+            <div class="modal-header">
+                <div class="modal-title-wrap">
+                    <h3><i class="fa-solid fa-tags"></i> 스트리머 및 자동 분류 키워드 설정</h3>
+                    <span class="sub-info-badge">채팅 감지 자동 분류</span>
+                </div>
+                <button class="btn-modal-close" id="btn-close-streamers">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Info Guide Box -->
+                <div class="keyword-guide-box">
+                    <p><i class="fa-solid fa-circle-info"></i> <b>자동 분류 원칙:</b> 후원 채팅에 등록된 키워드가 포함되면 해당 스트리머로 자동 분류됩니다.</p>
+                    <p><i class="fa-solid fa-circle-info"></i> <b>중복 시 규칙:</b> 채팅에 여러 키워드가 중복될 경우 <b>마지막 키워드</b>를 우선 인식합니다. (예: "체온플 말고 은채플!" -> "은채플" 인식)</p>
+                    <p><i class="fa-solid fa-circle-info"></i> <b>키워드 추가/삭제:</b> 키워드 칩의 <b>&times;</b>를 누르면 바로 삭제되고, <b>[+입력]</b>에 단어를 적고 Enter를 치면 바로 추가됩니다.</p>
+                </div>
+
+                <!-- Add New Streamer Form Row -->
+                <div class="streamer-table-wrap">
+                    <table class="streamer-manage-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">구분</th>
+                                <th style="width: 170px;">스트리머 이름 (수정 가능)</th>
+                                <th>키워드 (채팅 감지 시 해당 스트리머 자동 분류)</th>
+                                <th style="width: 65px;">색상</th>
+                                <th style="width: 110px;">관리</th>
+                            </tr>
+                            <tr class="add-streamer-row">
+                                <td class="text-center font-bold text-blue">신규</td>
+                                <td>
+                                    <input type="text" id="new-streamer-name" placeholder="이름 (예: 체온(여왕))" class="modal-input w-full">
+                                </td>
+                                <td>
+                                    <input type="text" id="new-streamer-keywords" placeholder="키워드 입력 (쉼표 구분: 체플,체온플,체온,ㅊㅍ,체)" class="modal-input w-full">
+                                </td>
+                                <td class="text-center">
+                                    <input type="color" id="new-streamer-color" value="#3b82f6" class="modal-color-input">
+                                </td>
+                                <td class="text-center">
+                                    <button id="btn-add-streamer-submit" class="btn-pill btn-save btn-sm">
+                                        <i class="fa-solid fa-plus"></i> 추가
+                                    </button>
+                                </td>
+                            </tr>
+                        </thead>
+                        <tbody id="streamers-table-body">
+                            <!-- Streamer rows rendered via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Weflab & Flabs Score Sync Modal -->
+    <div id="modal-sync" class="modal-overlay hide">
+        <div class="modal-box modal-lg">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-satellite-dish"></i> 위플랩 & score.flabs.kr 실시간 연동/비교 가이드</h3>
+                <button class="btn-modal-close" id="btn-close-sync">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="sync-instruction-card">
+                    <h4>🚀 1초 원클릭 실시간 연동 (Tampermonkey)</h4>
+                    <ol class="instruction-steps">
+                        <li>
+                            브라우저에 <b>Tampermonkey(탬퍼몽키)</b> 확장 프로그램이 설치되어 있다면 준비 완료입니다!
+                        </li>
+                        <li>
+                            아래 버튼을 클릭하여 <b>[통합 자동 연동 & 점수판 비교 스크립트]</b>를 설치(업데이트)합니다:
+                            <div style="margin: 8px 0;">
+                                <a href="/weflab_sync.user.js" target="_blank" class="btn-pill btn-save">
+                                    <i class="fa-solid fa-download"></i> 통합 실시간 연동 & 점수판 비교 스크립트 설치
+                                </a>
+                            </div>
+                        </li>
+                        <li>
+                            <b>위플랩 기록</b>: <b>https://weflab.com/alertlist</b> 창을 열어두면 후원/룰렛이 자동 기록됩니다.
+                        </li>
+                        <li>
+                            <b>점수판 실시간 비교</b>: <b>https://score.flabs.kr/</b>에 로그인하여 열어두기만 하면, 점수판 점수와 우리 대시보드 점수를 1~2초마다 자동 비교합니다!
+                            <div style="margin-top: 4px; font-size: 12px; color: #dc2626; font-weight: bold;">
+                                ★ 숫자가 다른 스트리머가 발견되면 카드가 즉시 빨간색으로 깜빡이며 차이점이 표시됩니다!
+                            </div>
+                        </li>
+                    </ol>
+                </div>
+
+                <div class="sync-status-box">
+                    <div class="status-indicator-row">
+                        <span class="status-dot green"></span>
+                        <span class="status-text">로컬 실시간 웹소켓 서버: <b>정상 연결 대기 중 (http://localhost:8000)</b></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

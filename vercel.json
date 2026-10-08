@@ -1,0 +1,26 @@
+{
+  "builds": [
+    {
+      "src": "backend/main.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "static/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "backend/main.py"
+    },
+    {
+      "src": "/weflab_sync.user.js",
+      "dest": "static/weflab_sync.user.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "static/$1"
+    }
+  ]
+}
