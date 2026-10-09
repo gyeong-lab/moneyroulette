@@ -527,24 +527,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function refreshSummary() {
+    function refreshSummary() {
         // Compute and render immediately from local state
         state.summary = computeSummary();
         renderScoreboard();
-
-        try {
-            const res = await fetch("/api/summary");
-            if (res.ok) {
-                const data = await res.json();
-                if (data && Array.isArray(data.streamers)) {
-                    // Strictly keep only streamers that are in state.streamers!
-                    const validNames = new Set((state.streamers || []).map(s => s.name));
-                    data.streamers = data.streamers.filter(s => validNames.has(s.name));
-                    state.summary = data;
-                    renderScoreboard();
-                }
-            }
-        } catch (e) {}
     }
 
     async function checkExternalScore() {
@@ -676,12 +662,21 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!streamerCardsContainer) return;
         streamerCardsContainer.innerHTML = "";
 
+        // Ensure state.summary and state.summary.streamers exist
+        if (!state.summary || !state.summary.streamers || state.summary.streamers.length === 0) {
+            state.summary = computeSummary();
+        }
+
         const extConnected = state.compareFlabs && state.externalScore && state.externalScore.connected;
         const useNet = state.externalScore && state.externalScore.baseline_active;
         const extStreamers = (useNet && state.externalScore.net_streamers) ? state.externalScore.net_streamers : ((state.externalScore && state.externalScore.streamers) || {});
 
+        const totalStreamersCount = (state.streamers || []).length;
+
         state.summary.streamers.forEach(s => {
-            if (!state.showZero && s.current_score === 0 && s.balloons === 0) {
+            // If multiple streamers exist, allow hiding 0-score streamers if showZero is unchecked.
+            // But if there is only 1 streamer, ALWAYS show their card so the scoreboard is never blank!
+            if (totalStreamersCount > 1 && !state.showZero && s.current_score === 0 && s.balloons === 0) {
                 return;
             }
 
@@ -770,7 +765,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         // Only show total card if enabled AND there are multiple streamers (if only 1 streamer, the single card already represents total)
-        if (state.showTotal && (state.summary.streamers && state.summary.streamers.length > 1)) {
+        if (state.showTotal && totalStreamersCount > 1) {
             const tot = state.summary.total;
             const card = document.createElement("div");
             card.className = "streamer-card total-card";
