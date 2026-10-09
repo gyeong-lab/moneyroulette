@@ -511,11 +511,12 @@ document.addEventListener("DOMContentLoaded", () => {
         renderAlerts();
         refreshSummary();
 
+        const hasStoredAlerts = localStorage.getItem("danbal_alerts") !== null;
         try {
             const res = await fetch("/api/alerts");
             if (res.ok) {
                 const data = await res.json();
-                if (Array.isArray(data)) {
+                if (Array.isArray(data) && !hasStoredAlerts) {
                     state.alerts = data;
                     saveAlertsToStorage();
                     renderAlerts();
@@ -931,8 +932,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     <input type="text" class="table-input alert-memo-input" data-id="${alert.id}" value="${escapeHtml(alert.memo || '')}" placeholder="메모">
                 </td>
                 <td class="td-action">
-                    <button class="btn-cancel-donation ${alert.status === 'canceled' ? 'btn-restore-donation' : ''} btn-toggle-cancel" data-id="${alert.id}">
-                        ${alert.status === 'canceled' ? '복원' : '취소'}
+                    <button class="btn-del-donation btn-delete-alert" data-id="${alert.id}" title="이 후원 내역 삭제">
+                        <i class="fa-solid fa-trash-can"></i> 삭제
                     </button>
                 </td>
             `;
@@ -1018,15 +1019,26 @@ document.addEventListener("DOMContentLoaded", () => {
             };
         });
 
-        document.querySelectorAll(".btn-toggle-cancel").forEach(el => {
+        document.querySelectorAll(".btn-delete-alert").forEach(el => {
             el.onclick = (e) => {
                 const id = el.dataset.id;
-                const alert = state.alerts.find(a => a.id == id);
-                if (!alert) return;
-                const newStatus = alert.status === "canceled" ? "active" : "canceled";
-                updateAlertField(id, { status: newStatus });
+                if (confirm("이 후원 내역을 삭제하시겠습니까?")) {
+                    deleteAlert(id);
+                }
             };
         });
+    }
+
+    async function deleteAlert(id) {
+        state.alerts = state.alerts.filter(a => String(a.id) !== String(id));
+        saveAlertsToStorage();
+        renderAlerts();
+        refreshSummary();
+        showToast("🗑️ 후원 내역이 삭제되었습니다.");
+
+        try {
+            await fetch(`/api/alerts/${id}`, { method: "DELETE" });
+        } catch (e) {}
     }
 
     async function updateAlertField(id, payload) {
