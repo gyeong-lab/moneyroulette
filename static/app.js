@@ -365,6 +365,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- WebSocket Connection ---
     function initWebSocket() {
+        if (window.location.hostname.includes("vercel.app")) {
+            console.log("[WebSocket] Vercel environment: using real-time polling mode.");
+            return;
+        }
+
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${protocol}//${window.location.host}/ws`;
 
@@ -572,24 +577,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function loadAlerts() {
-        renderAlerts();
-        refreshSummary();
-
-        const hasStoredAlerts = localStorage.getItem("danbal_alerts") !== null;
         try {
             const res = await fetch("/api/alerts");
             if (res.ok) {
                 const data = await res.json();
-                if (Array.isArray(data) && !hasStoredAlerts) {
-                    state.alerts = data;
-                    saveAlertsToStorage();
-                    renderAlerts();
-                    refreshSummary();
+                if (Array.isArray(data)) {
+                    let hasNew = false;
+                    for (const serverAlert of data) {
+                        const exists = state.alerts.some(a => 
+                            (a.id && serverAlert.id && a.id === serverAlert.id) ||
+                            (a.external_id && serverAlert.external_id && a.external_id === serverAlert.external_id)
+                        );
+                        if (!exists) {
+                            state.alerts.push(serverAlert);
+                            hasNew = true;
+                        }
+                    }
+                    if (hasNew || (state.alerts.length === 0 && data.length > 0)) {
+                        state.alerts.sort((a, b) => (b.id || 0) - (a.id || 0));
+                        saveAlertsToStorage();
+                        renderAlerts();
+                        refreshSummary();
+                    }
                 }
             }
         } catch (e) {
-            console.warn("Load alerts using local storage", e);
+            console.warn("Load alerts error", e);
         }
+        renderAlerts();
+        refreshSummary();
     }
 
     function refreshSummary() {
@@ -1976,4 +1992,12 @@ document.addEventListener("DOMContentLoaded", () => {
     loadAlerts();
     checkExternalScore();
     setInterval(checkExternalScore, 3000);
+
+    // Fallback real-time polling for serverless (e.g. Vercel) where WebSocket is unavailable
+    setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            loadAlerts();
+            loadStatus();
+        }
+    }, 2000);
 });
