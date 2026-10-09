@@ -1058,28 +1058,28 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll(".alert-id-input").forEach(el => {
             el.onblur = (e) => {
                 const id = e.target.dataset.id;
-                updateAlertField(id, { user_id: e.target.value.trim() });
+                updateAlertField(id, { user_id: e.target.value.trim() }, true);
             };
         });
 
         document.querySelectorAll(".alert-nickname-input").forEach(el => {
             el.onblur = (e) => {
                 const id = e.target.dataset.id;
-                updateAlertField(id, { nickname: e.target.value.trim() });
+                updateAlertField(id, { nickname: e.target.value.trim() }, true);
             };
         });
 
         document.querySelectorAll(".alert-chat-input").forEach(el => {
             el.onblur = (e) => {
                 const id = e.target.dataset.id;
-                updateAlertField(id, { chat_message: e.target.value.trim() });
+                updateAlertField(id, { chat_message: e.target.value.trim() }, true);
             };
         });
 
         document.querySelectorAll(".alert-streamer-select").forEach(el => {
             el.onchange = (e) => {
                 const id = e.target.dataset.id;
-                updateAlertField(id, { streamer_name: e.target.value });
+                updateAlertField(id, { streamer_name: e.target.value }, true);
             };
         });
 
@@ -1094,7 +1094,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll(".btn-toggle-alert-sign").forEach(el => {
             el.onclick = (e) => {
                 const id = el.dataset.id;
-                const alert = state.alerts.find(a => a.id == id);
+                const alert = state.alerts.find(a => String(a.id) === String(id));
                 if (!alert) return;
                 const newSign = alert.roulette_sign === "-" ? "+" : "-";
                 const absVal = Math.abs(alert.roulette_value || 0);
@@ -1106,40 +1106,67 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll(".alert-contrib-input").forEach(el => {
             el.onblur = (e) => {
                 const id = e.target.dataset.id;
-                const alert = state.alerts.find(a => a.id == id);
+                const alert = state.alerts.find(a => String(a.id) === String(id));
                 if (!alert) return;
                 const absVal = Math.abs(parseInt(e.target.value) || 0);
                 const isMinus = alert.roulette_sign === "-" || alert.roulette_value < 0;
                 const newVal = isMinus ? -absVal : absVal;
-                updateAlertField(id, { roulette_value: newVal });
+                updateAlertField(id, { roulette_value: newVal }, true);
             };
         });
 
         document.querySelectorAll(".alert-multiplier-select").forEach(el => {
             el.onchange = (e) => {
                 const id = e.target.dataset.id;
-                updateAlertField(id, { multiplier: e.target.value });
+                updateAlertField(id, { multiplier: e.target.value }, true);
             };
         });
 
         document.querySelectorAll(".alert-memo-input").forEach(el => {
             el.onblur = (e) => {
                 const id = e.target.dataset.id;
-                updateAlertField(id, { memo: e.target.value });
+                updateAlertField(id, { memo: e.target.value }, true);
             };
         });
 
         document.querySelectorAll(".btn-delete-alert").forEach(el => {
+            el.onmousedown = (e) => {
+                // Prevent blurring active input so click event is not cancelled
+                e.preventDefault();
+            };
             el.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 const id = el.dataset.id;
-                if (confirm("이 후원 내역을 삭제하시겠습니까?")) {
+                if (id) {
                     deleteAlert(id);
                 }
             };
         });
     }
 
+    // Event delegation on table body for 100% reliable single-click deletion
+    if (alertsTbody) {
+        alertsTbody.addEventListener("mousedown", (e) => {
+            if (e.target.closest(".btn-delete-alert")) {
+                e.preventDefault();
+            }
+        });
+        alertsTbody.addEventListener("click", (e) => {
+            const btn = e.target.closest(".btn-delete-alert");
+            if (btn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                if (id) {
+                    deleteAlert(id);
+                }
+            }
+        });
+    }
+
     async function deleteAlert(id) {
+        if (!id) return;
         state.alerts = state.alerts.filter(a => String(a.id) !== String(id));
         saveAlertsToStorage();
         renderAlerts();
@@ -1151,12 +1178,23 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {}
     }
 
-    async function updateAlertField(id, payload) {
-        const idx = state.alerts.findIndex(a => a.id == id);
+    async function updateAlertField(id, payload, skipRender = false) {
+        const idx = state.alerts.findIndex(a => String(a.id) === String(id));
         if (idx !== -1) {
+            let changed = false;
+            for (const k in payload) {
+                if (state.alerts[idx][k] !== payload[k]) {
+                    changed = true;
+                    break;
+                }
+            }
+            if (!changed) return;
+
             Object.assign(state.alerts[idx], payload);
             saveAlertsToStorage();
-            renderAlerts();
+            if (!skipRender) {
+                renderAlerts();
+            }
             refreshSummary();
         }
 
