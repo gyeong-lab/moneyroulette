@@ -1,19 +1,83 @@
 // Danbal Roulette Manager App
 document.addEventListener("DOMContentLoaded", () => {
+    const DEFAULT_STREAMERS = [
+        { id: 1, name: "체온(여왕)", keywords: "체플,체온플,체온,ㅊㅍ,체,ㅊㅇ,온플", minus_keywords: "", color: "#ec4899", order_index: 1, is_pinned: 0 },
+        { id: 2, name: "은채(개돼지)", keywords: "은플,은채플,ㅇㅍ,은채,은,은채핑", minus_keywords: "", color: "#3b82f6", order_index: 2, is_pinned: 0 },
+        { id: 3, name: "단발", keywords: "단발,조정간,ㄷㅂ,단발이", minus_keywords: "", color: "#10b981", order_index: 3, is_pinned: 0 }
+    ];
+
+    // Helper functions for localStorage persistence
+    function loadStoredStreamers() {
+        try {
+            const stored = localStorage.getItem("danbal_streamers");
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+        } catch (e) {}
+        return JSON.parse(JSON.stringify(DEFAULT_STREAMERS));
+    }
+
+    function saveStreamersToStorage() {
+        try {
+            localStorage.setItem("danbal_streamers", JSON.stringify(state.streamers));
+        } catch (e) {}
+    }
+
+    function loadStoredAlerts() {
+        try {
+            const stored = localStorage.getItem("danbal_alerts");
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch (e) {}
+        return [];
+    }
+
+    function saveAlertsToStorage() {
+        try {
+            localStorage.setItem("danbal_alerts", JSON.stringify(state.alerts));
+        } catch (e) {}
+    }
+
+    function loadStoredSettings() {
+        try {
+            const stored = localStorage.getItem("danbal_settings");
+            if (stored) return JSON.parse(stored);
+        } catch (e) {}
+        return {};
+    }
+
+    function saveSettingsToStorage() {
+        try {
+            localStorage.setItem("danbal_settings", JSON.stringify({
+                broadcast_active: state.status.broadcast_active,
+                broadcast_started_at: state.status.broadcast_started_at,
+                current_round: state.status.current_round,
+                round_name: state.status.round_name,
+                show_zero_streamers: state.showZero,
+                show_total: state.showTotal
+            }));
+        } catch (e) {}
+    }
+
+    const savedSettings = loadStoredSettings();
+
     let state = {
-        streamers: [],
-        alerts: [],
+        streamers: loadStoredStreamers(),
+        alerts: loadStoredAlerts(),
         status: {
-            broadcast_active: false,
-            broadcast_started_at: "",
+            broadcast_active: savedSettings.broadcast_active === true || savedSettings.broadcast_active === "true",
+            broadcast_started_at: savedSettings.broadcast_started_at || "",
             elapsed: "00:00:00",
             seoul_time: "",
-            current_round: 1,
-            round_name: "1라운드"
+            current_round: parseInt(savedSettings.current_round) || 1,
+            round_name: savedSettings.round_name || "1라운드"
         },
         summary: {
-            current_round: 1,
-            round_name: "1라운드",
+            current_round: parseInt(savedSettings.current_round) || 1,
+            round_name: savedSettings.round_name || "1라운드",
             streamers: [],
             total: { count: 0, balloons: 0, current_score: 0, total_score: 0 }
         },
@@ -24,8 +88,8 @@ document.addEventListener("DOMContentLoaded", () => {
             total_balloons: 0,
             total_score: 0
         },
-        showZero: true,
-        showTotal: true,
+        showZero: savedSettings.show_zero_streamers !== false && savedSettings.show_zero_streamers !== "false",
+        showTotal: savedSettings.show_total !== false && savedSettings.show_total !== "false",
         manualSign: "+"
     };
 
@@ -81,29 +145,214 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnClearAll = document.getElementById("btn-clear-all");
     const btnScrollBottom = document.getElementById("btn-scroll-bottom");
 
+    // --- Helpers: Time and Parsing ---
+    function getSeoulTimeStr() {
+        const now = new Date();
+        const seoulOffset = 9 * 60;
+        const localOffset = now.getTimezoneOffset();
+        const seoulDate = new Date(now.getTime() + (seoulOffset + localOffset) * 60000);
+        const y = seoulDate.getFullYear();
+        const m = String(seoulDate.getMonth() + 1).padStart(2, '0');
+        const d = String(seoulDate.getDate()).padStart(2, '0');
+        const hh = String(seoulDate.getHours()).padStart(2, '0');
+        const mm = String(seoulDate.getMinutes()).padStart(2, '0');
+        const ss = String(seoulDate.getSeconds()).padStart(2, '0');
+        return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+    }
+
+    function formatElapsed(startedAtStr) {
+        if (!startedAtStr) return "00:00:00";
+        try {
+            const parts = startedAtStr.split(/[- :]/);
+            if (parts.length < 6) return "00:00:00";
+            const start = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3] - 9, parts[4], parts[5]));
+            const now = new Date();
+            const diffMs = now.getTime() - start.getTime();
+            if (diffMs < 0) return "00:00:00";
+            const totSec = Math.floor(diffMs / 1000);
+            const h = Math.floor(totSec / 3600);
+            const m = Math.floor((totSec % 3600) / 60);
+            const s = totSec % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        } catch {
+            return "00:00:00";
+        }
+    }
+
+    function parseRouletteResult(text) {
+        if (!text) {
+            return { has_roulette: false, raw: "", percent: "", sign: "+", value: 0 };
+        }
+        text = text.trim();
+        const percentMatch = text.match(/\(\s*([\d\.]+%?)\s*\)/);
+        let percentStr = percentMatch ? percentMatch[1] : "";
+        if (percentStr && !percentStr.endsWith("%")) percentStr += "%";
+
+        const rem = text.replace(/\(\s*[\d\.]+%?\s*\)/, "").trim();
+        const isKkwang = rem.includes("꽝");
+        const minusMatch = rem.match(/-\s*([\d,]+)/);
+        const plusMatch = rem.match(/\+?\s*([\d,]+)/);
+
+        if (isKkwang) {
+            return { has_roulette: true, raw: text, percent: percentStr, sign: "꽝", value: 0 };
+        } else if (minusMatch) {
+            const val = parseInt(minusMatch[1].replace(/,/g, "")) || 0;
+            return { has_roulette: true, raw: text, percent: percentStr, sign: "-", value: -val };
+        } else if (plusMatch && plusMatch[1]) {
+            const val = parseInt(plusMatch[1].replace(/,/g, "")) || 0;
+            return { has_roulette: true, raw: text, percent: percentStr, sign: "+", value: val };
+        }
+        return { has_roulette: !!percentStr, raw: text, percent: percentStr, sign: "+", value: 0 };
+    }
+
+    function matchStreamerByChat(chat, streamers) {
+        if (!chat) return "선택";
+        chat = chat.trim();
+        let lastMatch = null;
+        let lastIdx = -1;
+
+        for (const s of streamers) {
+            const rawKw = s.keywords || "";
+            const kwList = rawKw.split(",").map(k => k.trim()).filter(Boolean);
+            const baseName = s.name.split("(")[0].trim();
+            if (baseName && !kwList.includes(baseName)) kwList.push(baseName);
+
+            for (const kw of kwList) {
+                if (!kw) continue;
+                if (kw.length === 1) {
+                    if (chat === kw || chat.includes(` ${kw} `) || chat.startsWith(`${kw} `) || chat.endsWith(` ${kw}`)) {
+                        const idx = chat.lastIndexOf(kw);
+                        if (idx >= lastIdx) {
+                            lastIdx = idx;
+                            lastMatch = s.name;
+                        }
+                    }
+                } else {
+                    const idx = chat.lastIndexOf(kw);
+                    if (idx !== -1 && idx >= lastIdx) {
+                        lastIdx = idx;
+                        lastMatch = s.name;
+                    }
+                }
+            }
+        }
+        return lastMatch || "선택";
+    }
+
+    function computeSummary() {
+        const curRound = parseInt(state.status.current_round) || 1;
+        const rname = state.status.round_name || `${curRound}라운드`;
+
+        const streamerStats = {};
+        (state.streamers || []).forEach(s => {
+            streamerStats[s.name] = {
+                name: s.name,
+                color: s.color || "#3b82f6",
+                count: 0,
+                balloons: 0,
+                current_score: 0,
+                total_score: 0
+            };
+        });
+
+        let totalBalloons = 0;
+        let totalCurrentScore = 0;
+        let totalAllScore = 0;
+        let totalCount = 0;
+
+        const activeAlerts = (state.alerts || []).filter(a => a.status === 'active' && !a.is_example);
+        activeAlerts.forEach(a => {
+            const sName = a.streamer_name;
+            const val = parseInt(a.roulette_value) || 0;
+            const balloons = parseInt(a.balloons) || 0;
+            const alertRound = parseInt(a.round_number) || 1;
+
+            totalBalloons += balloons;
+            totalAllScore += val;
+            totalCount += 1;
+            if (alertRound === curRound) {
+                totalCurrentScore += val;
+            }
+
+            if (sName && sName !== "선택") {
+                if (!streamerStats[sName]) {
+                    streamerStats[sName] = {
+                        name: sName,
+                        color: "#64748b",
+                        count: 0,
+                        balloons: 0,
+                        current_score: 0,
+                        total_score: 0
+                    };
+                }
+                streamerStats[sName].count += 1;
+                streamerStats[sName].balloons += balloons;
+                streamerStats[sName].total_score += val;
+                if (alertRound === curRound) {
+                    streamerStats[sName].current_score += val;
+                }
+            }
+        });
+
+        return {
+            current_round: curRound,
+            round_name: rname,
+            streamers: Object.values(streamerStats),
+            total: {
+                count: totalCount,
+                balloons: totalBalloons,
+                current_score: totalCurrentScore,
+                total_score: totalAllScore
+            }
+        };
+    }
+
+    // --- Client-side Interval Timer (ticks every second regardless of WebSocket) ---
+    setInterval(() => {
+        const seoulStr = getSeoulTimeStr();
+        if (currentSeoulTime) {
+            currentSeoulTime.innerText = seoulStr;
+        }
+        if (state.status.broadcast_active && state.status.broadcast_started_at) {
+            const elapsed = formatElapsed(state.status.broadcast_started_at);
+            state.status.elapsed = elapsed;
+            if (broadcastElapsedTimer) {
+                broadcastElapsedTimer.innerText = elapsed;
+            }
+        }
+    }, 1000);
+
     // --- WebSocket Connection ---
     function initWebSocket() {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-        ws = new WebSocket(wsUrl);
+        try {
+            ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => {
-            console.log("[WebSocket] Connected");
-        };
+            ws.onopen = () => {
+                console.log("[WebSocket] Connected");
+            };
 
-        ws.onmessage = (event) => {
-            try {
-                const msg = JSON.parse(event.data);
-                handleWsMessage(msg);
-            } catch (err) {
-                console.error("[WebSocket] Parse error", err);
-            }
-        };
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleWsMessage(msg);
+                } catch (err) {
+                    console.error("[WebSocket] Parse error", err);
+                }
+            };
 
-        ws.onclose = () => {
-            setTimeout(initWebSocket, 2000);
-        };
+            ws.onerror = () => {
+                // Ignore WebSocket errors in environments that do not support it (e.g. Vercel)
+            };
+
+            ws.onclose = () => {
+                setTimeout(initWebSocket, 5000);
+            };
+        } catch (e) {
+            console.warn("WebSocket not supported in this environment");
+        }
     }
 
     function handleWsMessage(msg) {
@@ -117,30 +366,37 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 break;
             case "NEW_ALERT":
-                state.alerts.unshift(msg.data);
-                renderAlerts();
-                refreshSummary();
+                if (!state.alerts.some(a => a.id === msg.data.id || (a.external_id && a.external_id === msg.data.external_id))) {
+                    state.alerts.unshift(msg.data);
+                    saveAlertsToStorage();
+                    renderAlerts();
+                    refreshSummary();
+                }
                 break;
             case "UPDATE_ALERT":
                 const idx = state.alerts.findIndex(a => a.id === msg.data.id);
                 if (idx !== -1) {
                     state.alerts[idx] = msg.data;
+                    saveAlertsToStorage();
                     renderAlerts();
                     refreshSummary();
                 }
                 break;
             case "DELETE_ALERT":
                 state.alerts = state.alerts.filter(a => a.id !== msg.id);
+                saveAlertsToStorage();
                 renderAlerts();
                 refreshSummary();
                 break;
             case "CLEAR_ALERTS":
                 state.alerts = [];
+                saveAlertsToStorage();
                 renderAlerts();
                 refreshSummary();
                 break;
             case "CLEAR_EXAMPLES":
                 state.alerts = state.alerts.filter(a => a.is_example !== 1);
+                saveAlertsToStorage();
                 renderAlerts();
                 refreshSummary();
                 showToast("✅ 예시 데이터가 모두 삭제되었습니다.");
@@ -149,6 +405,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 state.status.current_round = msg.new_round;
                 state.status.round_name = msg.round_name;
                 if (roundNameInput) roundNameInput.value = msg.round_name;
+                saveSettingsToStorage();
                 refreshSummary();
                 showToast(`🔄 [${msg.round_name}] 시작! 현재 기여도가 0으로 초기화되었습니다.`);
                 break;
@@ -156,6 +413,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (msg.data.round_name && roundNameInput) {
                     roundNameInput.value = msg.data.round_name;
                     state.status.round_name = msg.data.round_name;
+                    saveSettingsToStorage();
+                    refreshSummary();
                 }
                 break;
             case "STREAMERS_CHANGED":
@@ -169,6 +428,7 @@ document.addEventListener("DOMContentLoaded", () => {
             case "STATUS_CHANGE":
                 state.status.broadcast_active = msg.data.broadcast_active;
                 state.status.broadcast_started_at = msg.data.broadcast_started_at;
+                saveSettingsToStorage();
                 updateBroadcastUI();
                 break;
         }
@@ -176,63 +436,95 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Data Loaders ---
     async function loadStatus() {
+        chkShowZero.checked = state.showZero;
+        chkShowTotal.checked = state.showTotal;
+        if (roundNameInput) roundNameInput.value = state.status.round_name || `${state.status.current_round || 1}라운드`;
+        updateBroadcastUI();
+
         try {
             const res = await fetch("/api/status");
-            const data = await res.json();
-            state.status = data;
-            state.showZero = data.show_zero_streamers;
-            state.showTotal = data.show_total;
-            chkShowZero.checked = state.showZero;
-            chkShowTotal.checked = state.showTotal;
-            if (roundNameInput) roundNameInput.value = data.round_name || `${data.current_round || 1}라운드`;
-            updateBroadcastUI();
+            if (res.ok) {
+                const data = await res.json();
+                state.status = data;
+                state.showZero = data.show_zero_streamers;
+                state.showTotal = data.show_total;
+                chkShowZero.checked = state.showZero;
+                chkShowTotal.checked = state.showTotal;
+                if (roundNameInput) roundNameInput.value = data.round_name || `${data.current_round || 1}라운드`;
+                saveSettingsToStorage();
+                updateBroadcastUI();
+            }
         } catch (e) {
-            console.error("Load status error", e);
+            console.warn("Load status using local storage", e);
         }
     }
 
     async function loadStreamers() {
+        // Initial render from local state
+        renderStreamerDropdowns();
+        renderStreamersManageTable();
+        refreshSummary();
+
         try {
             const res = await fetch("/api/streamers");
-            state.streamers = await res.json();
-            renderStreamerDropdowns();
-            renderStreamersManageTable();
-            refreshSummary();
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    state.streamers = data;
+                    saveStreamersToStorage();
+                    renderStreamerDropdowns();
+                    renderStreamersManageTable();
+                    refreshSummary();
+                }
+            }
         } catch (e) {
-            console.error("Load streamers error", e);
+            console.warn("Load streamers using local storage", e);
         }
     }
 
     async function loadAlerts() {
+        renderAlerts();
+        refreshSummary();
+
         try {
             const res = await fetch("/api/alerts");
-            state.alerts = await res.json();
-            renderAlerts();
-            refreshSummary();
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    state.alerts = data;
+                    saveAlertsToStorage();
+                    renderAlerts();
+                    refreshSummary();
+                }
+            }
         } catch (e) {
-            console.error("Load alerts error", e);
+            console.warn("Load alerts using local storage", e);
         }
     }
 
     async function refreshSummary() {
+        // Compute and render immediately from local state
+        state.summary = computeSummary();
+        renderScoreboard();
+
         try {
             const res = await fetch("/api/summary");
-            state.summary = await res.json();
-            renderScoreboard();
-        } catch (e) {
-            console.error("Refresh summary error", e);
-        }
+            if (res.ok) {
+                state.summary = await res.json();
+                renderScoreboard();
+            }
+        } catch (e) {}
     }
 
     async function checkExternalScore() {
         try {
             const res = await fetch("/api/external_score");
-            state.externalScore = await res.json();
-            updateFlabsIndicator();
-            renderScoreboard();
-        } catch (e) {
-            console.error("Check external score error", e);
-        }
+            if (res.ok) {
+                state.externalScore = await res.json();
+                updateFlabsIndicator();
+                renderScoreboard();
+            }
+        } catch (e) {}
     }
 
     function updateFlabsIndicator() {
@@ -244,20 +536,18 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        // Check if there are any mismatches using net values (since broadcast start)
         let hasMismatch = false;
         const useNet = state.externalScore.baseline_active;
         const extStreamers = (useNet && state.externalScore.net_streamers) ? state.externalScore.net_streamers : (state.externalScore.streamers || {});
-        
+
         state.summary.streamers.forEach(s => {
-            const matchedKey = Object.keys(extStreamers).find(k => 
+            const matchedKey = Object.keys(extStreamers).find(k =>
                 k.toLowerCase() === s.name.toLowerCase() ||
                 k.includes(s.name) ||
                 s.name.includes(k)
             );
             if (matchedKey) {
                 const ext = extStreamers[matchedKey];
-                // Compare score or balloons
                 const ourScore = s.current_score || 0;
                 const extScore = ext.score !== undefined ? ext.score : null;
                 const ourBalloons = s.balloons || 0;
@@ -288,7 +578,7 @@ document.addEventListener("DOMContentLoaded", () => {
             btnBroadcastToggle.classList.add("running");
             btnBroadcastToggle.innerHTML = '<i class="fa-solid fa-stop"></i> <span>종료</span>';
             broadcastTimerBadge.classList.remove("hide");
-            broadcastElapsedTimer.innerText = state.status.elapsed || "00:00:00";
+            broadcastElapsedTimer.innerText = formatElapsed(state.status.broadcast_started_at);
         } else {
             btnBroadcastToggle.classList.remove("running");
             btnBroadcastToggle.innerHTML = '<i class="fa-solid fa-play"></i> <span>시작</span>';
@@ -301,10 +591,13 @@ document.addEventListener("DOMContentLoaded", () => {
             .concat(state.streamers.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`))
             .join("");
 
-        manualStreamer.innerHTML = optionsHtml;
+        if (manualStreamer) {
+            manualStreamer.innerHTML = optionsHtml;
+        }
     }
 
     function renderScoreboard() {
+        if (!streamerCardsContainer) return;
         streamerCardsContainer.innerHTML = "";
 
         const extConnected = state.externalScore && state.externalScore.connected;
@@ -327,12 +620,11 @@ document.addEventListener("DOMContentLoaded", () => {
             const totScore = s.total_score || 0;
             const totSign = totScore > 0 ? "+" : "";
 
-            // Comparison with external score.flabs.kr
             let mismatchHtml = "";
             let isMismatch = false;
 
             if (extConnected) {
-                const matchedKey = Object.keys(extStreamers).find(k => 
+                const matchedKey = Object.keys(extStreamers).find(k =>
                     k.toLowerCase() === s.name.toLowerCase() ||
                     k.includes(s.name) ||
                     s.name.includes(k)
@@ -452,18 +744,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
             card.innerHTML = `
                 <div class="card-top">
-                    <span class="streamer-card-name">🏆 총합 (전체) ${isTotalMismatch ? '<span class="mismatch-badge">불일치</span>' : ''}</span>
+                    <span class="streamer-card-name" style="color: ${isTotalMismatch ? '#b91c1c' : '#4338ca'}">
+                        ⭐ 전체 총합
+                        ${isTotalMismatch ? '<span class="mismatch-badge" style="margin-left:4px;">불일치!</span>' : ''}
+                    </span>
                     <span class="streamer-card-count">${tot.count}건</span>
                 </div>
                 <div class="card-middle">
-                    <span class="score-label-sub">현재 기여도 총합</span>
+                    <span class="score-label-sub">현재 라운드 총 기여도</span>
                     <span class="streamer-card-score ${scoreClass}">
                         ${scoreSign}${curTot.toLocaleString()}
                     </span>
                 </div>
                 <div class="card-bottom">
-                    <span class="total-score-badge">전체 누적: ${allSign}${allTot.toLocaleString()}</span>
-                    <span class="balloons-badge-card">총 ${tot.balloons.toLocaleString()}개 풍</span>
+                    <span class="total-score-badge">누적: ${allSign}${allTot.toLocaleString()}</span>
+                    <span class="balloons-badge-card">${tot.balloons.toLocaleString()}개 풍</span>
                 </div>
                 ${totalMismatchHtml}
             `;
@@ -472,29 +767,43 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderAlerts() {
+        if (!alertsTbody) return;
         alertsTbody.innerHTML = "";
 
         const hasExamples = state.alerts.some(a => a.is_example === 1);
         if (btnClearExamples) {
-            if (hasExamples) btnClearExamples.classList.remove("hide");
-            else btnClearExamples.classList.add("hide");
+            if (hasExamples) {
+                btnClearExamples.classList.remove("hide");
+            } else {
+                btnClearExamples.classList.add("hide");
+            }
         }
 
-        state.alerts.forEach(alert => {
-            const tr = document.createElement("tr");
-            const isEx = alert.is_example === 1;
-            tr.className = `alert-row ${alert.status === 'canceled' ? 'canceled' : ''} ${isEx ? 'is-example' : ''}`;
-            tr.dataset.id = alert.id;
+        const streamerOptionsList = ['<option value="선택">선택</option>']
+            .concat(state.streamers.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`));
 
-            const streamerOptions = ['<option value="선택">선택</option>']
-                .concat(state.streamers.map(s => {
-                    const sel = s.name === alert.streamer_name ? "selected" : "";
-                    return `<option value="${escapeHtml(s.name)}" ${sel}>${escapeHtml(s.name)}</option>`;
-                })).join("");
+        state.alerts.forEach((alert) => {
+            const tr = document.createElement("tr");
+            tr.dataset.id = alert.id;
+            if (alert.status === "canceled") {
+                tr.classList.add("row-canceled");
+            }
+            if (alert.is_example === 1) {
+                tr.classList.add("row-example");
+            }
 
             const isMinus = alert.roulette_sign === "-" || alert.roulette_value < 0;
             const signChar = isMinus ? "-" : "+";
             const absVal = Math.abs(alert.roulette_value || 0);
+
+            let streamerOptions = streamerOptionsList.map(opt => {
+                if (alert.streamer_name && opt.includes(`value="${escapeHtml(alert.streamer_name)}"`)) {
+                    return opt.replace('value=', 'selected value=');
+                }
+                return opt;
+            }).join("");
+
+            const isEx = alert.is_example === 1;
 
             tr.innerHTML = `
                 <td class="td-time">
@@ -649,28 +958,26 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function updateAlertField(id, payload) {
+        const idx = state.alerts.findIndex(a => a.id == id);
+        if (idx !== -1) {
+            Object.assign(state.alerts[idx], payload);
+            saveAlertsToStorage();
+            renderAlerts();
+            refreshSummary();
+        }
+
         try {
-            const res = await fetch(`/api/alerts/${id}`, {
+            await fetch(`/api/alerts/${id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
-            if (res.ok) {
-                const updated = await res.json();
-                const idx = state.alerts.findIndex(a => a.id == id);
-                if (idx !== -1) {
-                    state.alerts[idx] = updated;
-                    renderAlerts();
-                    refreshSummary();
-                }
-            }
-        } catch (e) {
-            console.error("Update alert error", e);
-        }
+        } catch (e) {}
     }
 
-    // --- Streamers & Keywords Management (Clean single keywords column) ---
+    // --- Streamers & Keywords Management ---
     function renderStreamersManageTable() {
+        if (!streamersTableBody) return;
         streamersTableBody.innerHTML = "";
 
         state.streamers.forEach((s, idx) => {
@@ -722,13 +1029,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 if (!name) return alert("스트리머 이름을 입력해주세요.");
 
-                await fetch(`/api/streamers/${id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name, color })
-                });
+                const s = state.streamers.find(x => x.id == id);
+                if (!s) return;
+                const oldName = s.name;
+                s.name = name;
+                s.color = color;
+
+                if (oldName !== name) {
+                    state.alerts.forEach(a => {
+                        if (a.streamer_name === oldName) a.streamer_name = name;
+                    });
+                    saveAlertsToStorage();
+                    renderAlerts();
+                }
+
+                saveStreamersToStorage();
+                renderStreamerDropdowns();
+                renderStreamersManageTable();
+                refreshSummary();
                 showToast(`✅ [${name}] 설정이 저장되었습니다.`);
-                loadStreamers();
+
+                try {
+                    await fetch(`/api/streamers/${id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name, color })
+                    });
+                } catch (e) {}
             };
         });
 
@@ -736,8 +1063,16 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.onclick = async () => {
                 const id = btn.dataset.id;
                 if (confirm("이 스트리머를 삭제하시겠습니까?")) {
-                    await fetch(`/api/streamers/${id}`, { method: "DELETE" });
-                    loadStreamers();
+                    state.streamers = state.streamers.filter(x => x.id != id);
+                    saveStreamersToStorage();
+                    renderStreamerDropdowns();
+                    renderStreamersManageTable();
+                    refreshSummary();
+                    showToast("🗑️ 스트리머가 삭제되었습니다.");
+
+                    try {
+                        await fetch(`/api/streamers/${id}`, { method: "DELETE" });
+                    } catch (e) {}
                 }
             };
         });
@@ -755,14 +1090,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     const curList = (s.keywords || '').split(',').map(k => k.trim()).filter(Boolean);
                     if (!curList.includes(newKw)) curList.push(newKw);
                     const updatedKw = curList.join(',');
-                    await fetch(`/api/streamers/${id}`, {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ keywords: updatedKw })
-                    });
+                    s.keywords = updatedKw;
+                    saveStreamersToStorage();
                     input.value = "";
-                    loadStreamers();
+                    renderStreamersManageTable();
                     showToast(`✅ 키워드 '${newKw}' 추가 완료`);
+
+                    try {
+                        await fetch(`/api/streamers/${id}`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ keywords: updatedKw })
+                        });
+                    } catch (e) {}
                 }
             };
         });
@@ -775,44 +1115,61 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!s) return;
 
                 const curList = (s.keywords || '').split(',').map(k => k.trim()).filter(k => k && k !== kw);
-                await fetch(`/api/streamers/${id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ keywords: curList.join(',') })
-                });
-                loadStreamers();
+                const updatedKw = curList.join(',');
+                s.keywords = updatedKw;
+                saveStreamersToStorage();
+                renderStreamersManageTable();
                 showToast(`🗑️ 키워드 '${kw}' 삭제 완료`);
+
+                try {
+                    await fetch(`/api/streamers/${id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ keywords: updatedKw })
+                    });
+                } catch (e) {}
             };
         });
     }
 
     // --- Actions ---
     btnBroadcastToggle.onclick = async () => {
+        const newActive = !state.status.broadcast_active;
+        state.status.broadcast_active = newActive;
+        state.status.broadcast_started_at = newActive ? getSeoulTimeStr() : "";
+        state.status.elapsed = "00:00:00";
+        saveSettingsToStorage();
+        updateBroadcastUI();
+        showToast(newActive ? "▶️ 방송이 시작되었습니다." : "⏹️ 방송이 종료되었습니다.");
+
         try {
             const res = await fetch("/api/broadcast/toggle", { method: "POST" });
-            const data = await res.json();
-            state.status.broadcast_active = data.broadcast_active;
-            state.status.broadcast_started_at = data.broadcast_started_at;
-            updateBroadcastUI();
-        } catch (e) {
-            console.error("Broadcast toggle error", e);
-        }
+            if (res.ok) {
+                const data = await res.json();
+                state.status.broadcast_active = data.broadcast_active;
+                state.status.broadcast_started_at = data.broadcast_started_at;
+                saveSettingsToStorage();
+                updateBroadcastUI();
+            }
+        } catch (e) {}
     };
 
     if (roundNameInput) {
         const saveRoundName = async () => {
             const val = roundNameInput.value.trim();
             if (!val) return;
+            state.status.round_name = val;
+            saveSettingsToStorage();
+            refreshSummary();
+            showToast(`✅ 라운드 이름이 [${val}]로 변경되었습니다.`);
+
             try {
                 await fetch("/api/round/update", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ round_name: val })
                 });
-                showToast(`✅ 라운드 이름이 [${val}]로 변경되었습니다.`);
-            } catch (e) {
-                console.error("Round update error", e);
-            }
+            } catch (e) {}
         };
 
         roundNameInput.onblur = saveRoundName;
@@ -826,89 +1183,180 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnClearExamples) {
         btnClearExamples.onclick = async () => {
             if (confirm("테스트용 [예시] 데이터를 모두 삭제하시겠습니까?")) {
+                state.alerts = state.alerts.filter(a => a.is_example !== 1);
+                saveAlertsToStorage();
+                renderAlerts();
+                refreshSummary();
+                showToast("✅ 예시 데이터가 모두 삭제되었습니다.");
+
                 try {
                     await fetch("/api/alerts/clear-examples", { method: "POST" });
-                } catch (e) {
-                    console.error("Clear examples error", e);
-                }
+                } catch (e) {}
             }
         };
     }
 
     btnResetContribution.onclick = async () => {
         if (confirm("⚠️ 스트리머들의 현재 기여도를 0으로 초기화하시겠습니까?\n\n(이전 모든 후원 기록과 누적 총합 기여도, 풍 개수는 안전하게 유지됩니다)")) {
+            const newRound = (parseInt(state.status.current_round) || 1) + 1;
+            const newRoundName = `${newRound}라운드`;
+            state.status.current_round = newRound;
+            state.status.round_name = newRoundName;
+            if (roundNameInput) roundNameInput.value = newRoundName;
+            saveSettingsToStorage();
+            refreshSummary();
+            showToast(`🔄 [${newRoundName}] 시작! 현재 기여도가 0으로 초기화되었습니다.`);
+
             try {
                 await fetch("/api/contribution/reset", { method: "POST" });
-            } catch (e) {
-                console.error("Contribution reset error", e);
-            }
+            } catch (e) {}
         }
     };
 
-    manualSignBtn.onclick = () => {
-        state.manualSign = state.manualSign === "+" ? "-" : "+";
-        manualSignBtn.innerText = state.manualSign;
-        manualSignBtn.className = `btn-sign-toggle ${state.manualSign === '+' ? 'plus' : 'minus'}`;
-    };
-
-    btnManualAdd.onclick = async () => {
-        const id = manualId.value.trim();
-        const nickname = manualNickname.value.trim() || id;
-        const chat = manualChat.value.trim();
-        const streamer = manualStreamer.value;
-        const balloons = parseInt(manualBalloons.value) || 0;
-        const absContrib = parseInt(manualContribVal.value) || 0;
-        const contrib = state.manualSign === "-" ? -absContrib : absContrib;
-        const multiplier = manualMultiplier.value;
-        const memo = manualMemo.value.trim();
-
-        if (!id && !chat && balloons === 0 && absContrib === 0) {
-            alert("아이디 또는 채팅, 풍 개수/기여도를 입력해주세요.");
-            return;
-        }
-
-        const payload = {
-            user_id: id,
-            nickname: nickname,
-            balloons: balloons,
-            chat_message: chat,
-            roulette_result: absContrib ? `${state.manualSign}${absContrib}` : "",
-            contribution: contrib,
-            streamer_name: streamer !== "선택" ? streamer : null,
-            multiplier: multiplier,
-            memo: memo,
-            is_example: 0
+    if (manualSignBtn) {
+        manualSignBtn.onclick = () => {
+            state.manualSign = state.manualSign === "+" ? "-" : "+";
+            manualSignBtn.innerText = state.manualSign;
+            manualSignBtn.className = `btn-sign-toggle ${state.manualSign === '+' ? 'plus' : 'minus'}`;
         };
+    }
 
-        try {
-            const res = await fetch("/api/alerts/ingest", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
-            if (res.ok) {
-                manualId.value = "";
-                manualNickname.value = "";
-                manualChat.value = "";
-                manualBalloons.value = "";
-                manualContribVal.value = "";
-                manualMemo.value = "";
+    if (btnManualAdd) {
+        btnManualAdd.onclick = async () => {
+            const id = manualId.value.trim();
+            const nickname = manualNickname.value.trim() || id;
+            const chat = manualChat.value.trim();
+            let streamer = manualStreamer.value;
+            const balloons = parseInt(manualBalloons.value) || 0;
+            const absContrib = parseInt(manualContribVal.value) || 0;
+            const contrib = state.manualSign === "-" ? -absContrib : absContrib;
+            const multiplier = manualMultiplier.value;
+            const memo = manualMemo.value.trim();
+
+            if (!id && !chat && balloons === 0 && absContrib === 0) {
+                alert("아이디 또는 채팅, 풍 개수/기여도를 입력해주세요.");
+                return;
             }
-        } catch (e) {
-            console.error("Manual add error", e);
-        }
-    };
 
+            if (!streamer || streamer === "선택") {
+                streamer = matchStreamerByChat(chat, state.streamers);
+            }
+
+            const parsed = parseRouletteResult(chat);
+            let finalContrib = contrib;
+            if (absContrib === 0 && parsed.value !== 0) {
+                finalContrib = parsed.value;
+            }
+            const finalSign = finalContrib < 0 ? "-" : "+";
+
+            const seoulTime = getSeoulTimeStr();
+            const elapsed = state.status.broadcast_active ? formatElapsed(state.status.broadcast_started_at) : "미시작";
+            const curRound = parseInt(state.status.current_round) || 1;
+
+            const newAlert = {
+                id: Date.now(),
+                external_id: `manual_${Date.now()}`,
+                platform: "SOOP",
+                created_at: seoulTime,
+                broadcast_elapsed: elapsed,
+                user_id: id,
+                nickname: nickname,
+                balloons: balloons,
+                chat_message: chat,
+                roulette_raw: parsed.raw || (absContrib ? `${state.manualSign}${absContrib}` : ""),
+                roulette_percent: parsed.percent || "",
+                roulette_sign: finalSign,
+                roulette_value: finalContrib,
+                streamer_name: streamer,
+                multiplier: multiplier,
+                contribution: finalContrib,
+                memo: memo,
+                status: "active",
+                round_number: curRound,
+                is_example: 0
+            };
+
+            state.alerts.unshift(newAlert);
+            saveAlertsToStorage();
+
+            manualId.value = "";
+            manualNickname.value = "";
+            manualChat.value = "";
+            manualBalloons.value = "";
+            manualContribVal.value = "";
+            manualMemo.value = "";
+
+            renderAlerts();
+            refreshSummary();
+            showToast("✅ 후원 내역이 추가되었습니다.");
+
+            try {
+                const res = await fetch("/api/alerts/ingest", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        user_id: id,
+                        nickname: nickname,
+                        balloons: balloons,
+                        chat_message: chat,
+                        roulette_result: newAlert.roulette_raw,
+                        contribution: finalContrib,
+                        streamer_name: streamer !== "선택" ? streamer : null,
+                        multiplier: multiplier,
+                        memo: memo,
+                        is_example: 0
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.alert && data.alert.id) {
+                        newAlert.id = data.alert.id;
+                        saveAlertsToStorage();
+                    }
+                }
+            } catch (e) {}
+        };
+    }
+
+    // --- Streamer Add Submit (Key Fix for User Request) ---
     btnAddStreamerSubmit.onclick = async () => {
         const name = newStreamerName.value.trim();
         const keywords = newStreamerKeywords.value.trim();
-        const color = newStreamerColor.value;
+        const color = newStreamerColor.value || "#3b82f6";
 
         if (!name) {
             alert("스트리머 이름을 입력해주세요.");
             return;
         }
 
+        if (state.streamers.some(s => s.name.trim().toLowerCase() === name.toLowerCase())) {
+            alert("이미 등록된 스트리머 이름입니다.");
+            return;
+        }
+
+        const newStreamer = {
+            id: Date.now(),
+            name: name,
+            keywords: keywords,
+            minus_keywords: "",
+            color: color,
+            order_index: state.streamers.length + 1,
+            is_pinned: 0
+        };
+
+        // Always add to state and save to localStorage immediately!
+        state.streamers.push(newStreamer);
+        saveStreamersToStorage();
+
+        newStreamerName.value = "";
+        newStreamerKeywords.value = "";
+
+        renderStreamerDropdowns();
+        renderStreamersManageTable();
+        refreshSummary();
+        showToast(`✅ 스트리머 [${name}] 등록 완료!`);
+
+        // Sync with backend if available
         try {
             const res = await fetch("/api/streamers", {
                 method: "POST",
@@ -916,44 +1364,138 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify({ name, keywords, color })
             });
             if (res.ok) {
-                newStreamerName.value = "";
-                newStreamerKeywords.value = "";
-                loadStreamers();
-                showToast(`✅ 스트리머 [${name}] 등록 완료!`);
+                const data = await res.json();
+                if (data.id) {
+                    newStreamer.id = data.id;
+                    saveStreamersToStorage();
+                    renderStreamersManageTable();
+                }
             }
         } catch (e) {
-            console.error("Add streamer error", e);
+            console.warn("Backend offline or error, kept in local storage", e);
         }
     };
 
     chkShowZero.onchange = (e) => {
         state.showZero = e.target.checked;
+        saveSettingsToStorage();
+        renderScoreboard();
         fetch("/api/settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ show_zero_streamers: state.showZero })
-        });
-        renderScoreboard();
+        }).catch(() => {});
     };
 
     chkShowTotal.onchange = (e) => {
         state.showTotal = e.target.checked;
+        saveSettingsToStorage();
+        renderScoreboard();
         fetch("/api/settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ show_total: state.showTotal })
-        });
-        renderScoreboard();
+        }).catch(() => {});
     };
 
-    btnExportExcel.onclick = () => {
-        window.location.href = "/api/export/excel";
+    // Excel Export (Dual Mode: Server API with Client-side SheetJS Fallback)
+    btnExportExcel.onclick = async () => {
+        // Try server API first if running locally
+        try {
+            const testRes = await fetch("/api/status");
+            if (testRes.ok) {
+                window.location.href = "/api/export/excel";
+                return;
+            }
+        } catch (e) {}
+
+        // Fallback: Generate Excel directly in the browser via SheetJS
+        if (typeof XLSX === "undefined") {
+            alert("엑셀 생성 라이브러리를 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
+            return;
+        }
+
+        const wb = XLSX.utils.book_new();
+
+        // 1. 후원목록 시트
+        const donationRows = [
+            ['ID', '시간', '방송시간', '닉네임', '아이디', '후원스트리머', '풍선종류', '개수', '기여도', '원플원', '채팅']
+        ];
+        const activeAlerts = state.alerts.filter(a => a.status === 'active' && !a.is_example);
+        activeAlerts.forEach(a => {
+            donationRows.push([
+                a.id,
+                a.created_at || '',
+                a.broadcast_elapsed || '',
+                a.nickname || '',
+                a.user_id || '',
+                a.streamer_name || '',
+                '별풍선',
+                a.balloons || 0,
+                a.roulette_value || 0,
+                a.multiplier || '기본배수',
+                a.chat_message || ''
+            ]);
+        });
+        const wsAll = XLSX.utils.aoa_to_sheet(donationRows);
+        XLSX.utils.book_append_sheet(wb, wsAll, '후원목록');
+
+        // 2. 스트리머별 통계 시트
+        const statsRows = [
+            ['순위', '스트리머', '후원 건수', '총 별풍선 (개)', '현재 라운드 기여도', '누적 총 기여도']
+        ];
+        const sum = computeSummary();
+        sum.streamers.forEach((s, idx) => {
+            statsRows.push([
+                idx + 1,
+                s.name,
+                s.count,
+                s.balloons,
+                s.current_score,
+                s.total_score
+            ]);
+        });
+        statsRows.push([
+            '총합',
+            '전체 합계',
+            sum.total.count,
+            sum.total.balloons,
+            sum.total.current_score,
+            sum.total.total_score
+        ]);
+        const wsStats = XLSX.utils.aoa_to_sheet(statsRows);
+        XLSX.utils.book_append_sheet(wb, wsStats, '스트리머별 통계');
+
+        const fileName = `danbal_roulette_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        showToast("📊 엑셀 파일이 다운로드되었습니다.");
     };
 
     // Project Save (Download JSON backup)
     if (btnSaveProject) {
         btnSaveProject.onclick = () => {
-            window.location.href = "/api/project/export";
+            const backupData = {
+                version: "1.0",
+                exported_at: getSeoulTimeStr(),
+                streamers: state.streamers,
+                alerts: state.alerts,
+                settings: {
+                    broadcast_active: state.status.broadcast_active,
+                    broadcast_started_at: state.status.broadcast_started_at,
+                    current_round: state.status.current_round,
+                    round_name: state.status.round_name,
+                    show_zero_streamers: state.showZero,
+                    show_total: state.showTotal
+                }
+            };
+            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const nowStr = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "_");
+            a.download = `danbal_project_backup_${nowStr}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
             showToast("💾 프로젝트 데이터 백업 파일이 다운로드되었습니다.");
         };
     }
@@ -973,23 +1515,41 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
-            const formData = new FormData();
-            formData.append("file", file);
-
             try {
-                const res = await fetch("/api/project/import", {
-                    method: "POST",
-                    body: formData
-                });
-                const result = await res.json();
-                if (res.ok) {
-                    showToast(`✅ 프로젝트 복원 성공! (스트리머: ${result.streamers_count}명, 후원: ${result.alerts_count}건)`);
-                    loadStatus();
-                    loadStreamers();
-                    loadAlerts();
-                } else {
-                    alert(`프로젝트 불러오기 실패: ${result.error || '파일 형식 오류'}`);
+                const text = await file.text();
+                const data = JSON.parse(text);
+                if (!data.streamers || !data.alerts) {
+                    alert("잘못된 프로젝트 파일 형식입니다.");
+                    return;
                 }
+
+                state.streamers = data.streamers;
+                state.alerts = data.alerts;
+                if (data.settings) {
+                    state.status.current_round = parseInt(data.settings.current_round) || 1;
+                    state.status.round_name = data.settings.round_name || `${state.status.current_round}라운드`;
+                    state.status.broadcast_active = data.settings.broadcast_active === true || data.settings.broadcast_active === "true";
+                    state.status.broadcast_started_at = data.settings.broadcast_started_at || "";
+                    state.showZero = data.settings.show_zero_streamers !== false && data.settings.show_zero_streamers !== "false";
+                    state.showTotal = data.settings.show_total !== false && data.settings.show_total !== "false";
+                    chkShowZero.checked = state.showZero;
+                    chkShowTotal.checked = state.showTotal;
+                    if (roundNameInput) roundNameInput.value = state.status.round_name;
+                }
+                saveStreamersToStorage();
+                saveAlertsToStorage();
+                saveSettingsToStorage();
+                renderStreamerDropdowns();
+                renderStreamersManageTable();
+                renderAlerts();
+                refreshSummary();
+                updateBroadcastUI();
+                showToast(`✅ 프로젝트 복원 성공! (스트리머: ${state.streamers.length}명, 후원: ${state.alerts.length}건)`);
+
+                // Also sync with backend if available
+                const formData = new FormData();
+                formData.append("file", file);
+                fetch("/api/project/import", { method: "POST", body: formData }).catch(() => {});
             } catch (err) {
                 console.error("Project import error", err);
                 alert("프로젝트 파일을 읽는 중 오류가 발생했습니다.");
@@ -999,7 +1559,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     btnClearAll.onclick = async () => {
         if (confirm("정말로 모든 후원 내역을 영구 초기화하시겠습니까? (되돌릴 수 없습니다)")) {
-            await fetch("/api/alerts/clear", { method: "POST" });
+            state.alerts = [];
+            saveAlertsToStorage();
+            renderAlerts();
+            refreshSummary();
+            showToast("🗑️ 모든 후원 내역이 삭제되었습니다.");
+            try {
+                await fetch("/api/alerts/clear", { method: "POST" });
+            } catch (e) {}
         }
     };
 

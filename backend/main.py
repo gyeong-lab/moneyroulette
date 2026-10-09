@@ -9,7 +9,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import pandas as pd
 import xlsxwriter
 
 from backend.database import (
@@ -29,6 +28,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def normalize_api_path(request, call_next):
+    path = request.scope.get("path", "")
+    if path and not path.startswith("/api") and not path.startswith("/static") and not path.startswith("/ws") and not any(path.endswith(ext) for ext in [".js", ".css", ".html", ".png", ".jpg", ".ico", ".xlsx"]) and path != "/":
+        request.scope["path"] = "/api" + path
+    response = await call_next(request)
+    return response
 
 class ConnectionManager:
     def __init__(self):
@@ -54,6 +61,8 @@ manager = ConnectionManager()
 
 @app.on_event("startup")
 async def startup_event():
+    if os.environ.get("VERCEL"):
+        return
     async def timer_tick():
         while True:
             await asyncio.sleep(1)
@@ -1032,5 +1041,8 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-os.makedirs(STATIC_DIR, exist_ok=True)
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+if os.path.exists(STATIC_DIR):
+    try:
+        app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    except Exception:
+        pass
