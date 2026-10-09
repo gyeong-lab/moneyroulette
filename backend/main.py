@@ -13,7 +13,7 @@ import xlsxwriter
 
 from backend.database import (
     init_db, get_db, get_current_seoul_time,
-    calculate_broadcast_elapsed
+    calculate_broadcast_elapsed, to_bool
 )
 from backend.parser import parse_roulette_result, match_streamer_by_chat
 
@@ -72,7 +72,7 @@ async def startup_event():
             rows = {r['key']: r['value'] for r in cursor.fetchall()}
             conn.close()
             
-            is_active = (rows.get('broadcast_active') == 'true')
+            is_active = to_bool(rows.get('broadcast_active'), False)
             started_at = rows.get('broadcast_started_at', '')
             if is_active and started_at:
                 elapsed = calculate_broadcast_elapsed(started_at)
@@ -190,7 +190,7 @@ async def sync_external_score(req: ExternalScoreSyncRequest):
     settings = {r['key']: r['value'] for r in cursor.fetchall()}
     conn.close()
 
-    is_active = (settings.get('broadcast_active') == 'true')
+    is_active = to_bool(settings.get('broadcast_active'), False)
 
     # If broadcast is active, initialize baseline if not yet set
     if is_active and not external_baseline["active"]:
@@ -359,7 +359,7 @@ def get_status():
     cursor.execute("SELECT key, value FROM settings")
     settings = {r['key']: r['value'] for r in cursor.fetchall()}
     
-    is_active = (settings.get('broadcast_active') == 'true')
+    is_active = to_bool(settings.get('broadcast_active'), False)
     started_at = settings.get('broadcast_started_at', '')
     elapsed = calculate_broadcast_elapsed(started_at) if is_active else "00:00:00"
     current_round = int(settings.get('current_round', '1'))
@@ -371,29 +371,37 @@ def get_status():
         "broadcast_started_at": started_at,
         "elapsed": elapsed,
         "seoul_time": get_current_seoul_time(),
-        "show_zero_streamers": (settings.get('show_zero_streamers') == 'true'),
-        "show_total": (settings.get('show_total', 'true') == 'true'),
-        "compare_flabs": (settings.get('compare_flabs', 'true') == 'true'),
+        "show_zero_streamers": to_bool(settings.get('show_zero_streamers'), True),
+        "show_total": to_bool(settings.get('show_total'), True),
+        "compare_flabs": to_bool(settings.get('compare_flabs'), True),
         "roulette_balloons": settings.get('roulette_balloons', '500, 501, 1000, 1001, 3000, 3001, 5000, 5001'),
-        "allow_all_balloons": (settings.get('allow_all_balloons', 'false') == 'true'),
+        "allow_all_balloons": to_bool(settings.get('allow_all_balloons'), False),
         "current_round": current_round,
         "round_name": round_name
     }
 
 @app.post("/api/broadcast/toggle")
-async def toggle_broadcast():
+async def toggle_broadcast(payload: Optional[dict] = Body(None)):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT value FROM settings WHERE key = 'broadcast_active'")
     row = cursor.fetchone()
-    current_active = (row['value'] == 'true') if row else False
+    current_active = to_bool(row['value'], False) if row else False
     
-    new_active = not current_active
-    now_seoul = get_current_seoul_time() if new_active else ""
+    if payload and "active" in payload and payload["active"] is not None:
+        new_active = to_bool(payload["active"])
+    else:
+        new_active = not current_active
+
+    if payload and "started_at" in payload and payload["started_at"]:
+        now_seoul = payload["started_at"] if new_active else ""
+    else:
+        now_seoul = get_current_seoul_time() if new_active else ""
     
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('broadcast_active', ?)", ('true' if new_active else 'false',))
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('broadcast_started_at', ?)", (now_seoul,))
+    
     if new_active:
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('broadcast_started_at', ?)", (now_seoul,))
         # Automatically reset baseline for external score comparator
         raw_map = external_score_cache.get("streamers", {})
         external_baseline["active"] = True
@@ -565,10 +573,10 @@ async def ingest_alert(req: AlertIngestRequest):
     
     cursor.execute("SELECT key, value FROM settings WHERE key IN ('broadcast_active', 'broadcast_started_at', 'current_round', 'roulette_balloons', 'allow_all_balloons')")
     settings = {r['key']: r['value'] for r in cursor.fetchall()}
-    is_active = (settings.get('broadcast_active') == 'true')
+    is_active = to_bool(settings.get('broadcast_active'), False)
     started_at = settings.get('broadcast_started_at', '')
     cur_round = int(settings.get('current_round', '1'))
-    allow_all = (settings.get('allow_all_balloons', 'false') == 'true')
+    allow_all = to_bool(settings.get('allow_all_balloons'), False)
     raw_balloons = settings.get('roulette_balloons', '500, 501, 1000, 1001, 3000, 3001, 5000, 5001')
 
     import re
@@ -749,7 +757,13 @@ async def save_settings(payload: dict = Body(...)):
     conn = get_db()
     cursor = conn.cursor()
     for k, v in payload.items():
-        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, str(v)))
+        if isinstance(v, bool):
+            val_str = 'true' if v else 'false'
+        elif v is None:
+            val_str = ''
+        else:
+            val_str = str(v)
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, val_str))
     conn.commit()
     conn.close()
     await manager.broadcast({"type": "SETTINGS_CHANGED", "data": payload})
@@ -767,7 +781,7 @@ def get_summary():
     
     cur_round = int(settings_dict.get('current_round', '1'))
     rname = settings_dict.get('round_name', f"{cur_round}라운드")
-    allow_all = (settings_dict.get('allow_all_balloons', 'false') == 'true')
+    allow_all = to_bool(settings_dict.get('allow_all_balloons'), False)
     raw_balloons = settings_dict.get('roulette_balloons', '500, 501, 1000, 1001, 3000, 3001, 5000, 5001')
 
     import re

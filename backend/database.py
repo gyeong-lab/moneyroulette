@@ -99,6 +99,7 @@ def init_db():
             'broadcast_started_at': '',
             'show_zero_streamers': 'true',
             'show_total': 'true',
+            'compare_flabs': 'true',
             'current_round': '1',
             'round_name': '1라운드',
             'weflab_cookie': ''
@@ -107,6 +108,10 @@ def init_db():
             cursor.execute("SELECT key FROM settings WHERE key = ?", (k,))
             if not cursor.fetchone():
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
+
+        # Normalize existing boolean values in settings table to lowercase 'true'/'false'
+        cursor.execute("UPDATE settings SET value = 'true' WHERE LOWER(value) = 'true'")
+        cursor.execute("UPDATE settings SET value = 'false' WHERE LOWER(value) = 'false'")
 
         cursor.execute("SELECT COUNT(*) as cnt FROM streamers")
         if cursor.fetchone()['cnt'] == 0:
@@ -121,6 +126,18 @@ def init_db():
         conn.close()
     except Exception as e:
         print(f"init_db warning: {e}")
+
+def to_bool(val, default: bool = False) -> bool:
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    s = str(val).strip().lower()
+    if s in ('true', '1', 't', 'yes', 'y'):
+        return True
+    if s in ('false', '0', 'f', 'no', 'n'):
+        return False
+    return default
 
 def get_current_seoul_time():
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")

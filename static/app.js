@@ -46,10 +46,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const stored = localStorage.getItem("danbal_settings");
             if (stored) return JSON.parse(stored);
         } catch (e) {}
-        return {};
+        return null;
     }
 
     const DEFAULT_ROULETTE_BALLOONS = "500, 501, 1000, 1001, 3000, 3001, 5000, 5001";
+
+    let lastBroadcastToggleTime = 0;
 
     function saveSettingsToStorage() {
         try {
@@ -67,7 +69,9 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {}
     }
 
-    const savedSettings = loadStoredSettings();
+    const storedSettings = loadStoredSettings();
+    const hasStoredSettings = storedSettings !== null;
+    const savedSettings = storedSettings || {};
 
     let state = {
         streamers: loadStoredStreamers(),
@@ -500,50 +504,92 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 break;
             case "STATUS_CHANGE":
-                state.status.broadcast_active = msg.data.broadcast_active;
-                state.status.broadcast_started_at = msg.data.broadcast_started_at;
-                saveSettingsToStorage();
-                updateBroadcastUI();
+                if ((Date.now() - lastBroadcastToggleTime) >= 10000) {
+                    state.status.broadcast_active = (msg.data.broadcast_active === true || msg.data.broadcast_active === "true");
+                    state.status.broadcast_started_at = msg.data.broadcast_started_at || "";
+                    saveSettingsToStorage();
+                    updateBroadcastUI();
+                }
                 break;
         }
     }
 
     // --- Data Loaders ---
     async function loadStatus() {
-        chkShowZero.checked = state.showZero;
-        chkShowTotal.checked = state.showTotal;
+        if (chkShowZero) chkShowZero.checked = state.showZero;
+        if (chkShowTotal) chkShowTotal.checked = state.showTotal;
         if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
         updateFlabsToggleUI();
         updateFlabsIndicator();
         updateBalloonFilterUI();
-        if (roundNameInput) roundNameInput.value = state.status.round_name || `${state.status.current_round || 1}라운드`;
+        if (roundNameInput && !roundNameInput.matches(':focus')) {
+            roundNameInput.value = state.status.round_name || `${state.status.current_round || 1}라운드`;
+        }
         updateBroadcastUI();
 
         try {
             const res = await fetch("/api/status");
             if (res.ok) {
                 const data = await res.json();
-                state.status = data;
-                state.showZero = data.show_zero_streamers;
-                state.showTotal = data.show_total;
-                if (data.compare_flabs !== undefined) {
-                    state.compareFlabs = (data.compare_flabs === true || data.compare_flabs === "true");
-                }
                 const hasLocalSettings = !!localStorage.getItem("danbal_settings");
-                if (data.roulette_balloons !== undefined && !hasLocalSettings) {
-                    state.rouletteBalloons = data.roulette_balloons;
+
+                if (!hasLocalSettings) {
+                    // First-time visit: adopt server defaults
+                    state.showZero = data.show_zero_streamers !== false && data.show_zero_streamers !== "false";
+                    state.showTotal = data.show_total !== false && data.show_total !== "false";
+                    if (data.compare_flabs !== undefined) {
+                        state.compareFlabs = (data.compare_flabs === true || data.compare_flabs === "true");
+                    }
+                    if (data.roulette_balloons !== undefined) {
+                        state.rouletteBalloons = data.roulette_balloons;
+                    }
+                    if (data.allow_all_balloons !== undefined) {
+                        state.allowAllBalloons = (data.allow_all_balloons === true || data.allow_all_balloons === "true");
+                    }
+                    state.status.broadcast_active = (data.broadcast_active === true || data.broadcast_active === "true");
+                    state.status.broadcast_started_at = data.broadcast_started_at || "";
+                    if (data.round_name) state.status.round_name = data.round_name;
+                    if (data.current_round) state.status.current_round = data.current_round;
+                    saveSettingsToStorage();
+                } else {
+                    // User already has local settings: PRESERVE user UI choices (showZero, showTotal, compareFlabs, etc.)
+                    // NEVER allow server polling to overwrite user options!
+                    const isVercel = window.location.hostname.includes("vercel.app");
+                    const recentlyToggled = (Date.now() - lastBroadcastToggleTime) < 15000;
+
+                    if (!recentlyToggled && !isVercel) {
+                        // On standalone local server, allow server status sync
+                        state.status.broadcast_active = (data.broadcast_active === true || data.broadcast_active === "true");
+                        state.status.broadcast_started_at = data.broadcast_started_at || "";
+                    } else if (isVercel && state.status.broadcast_active && !data.broadcast_active && !recentlyToggled) {
+                        // In Vercel serverless, keep local broadcast state and re-sync to backend silently
+                        fetch("/api/settings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                broadcast_active: state.status.broadcast_active,
+                                broadcast_started_at: state.status.broadcast_started_at
+                            })
+                        }).catch(() => {});
+                    }
+
+                    if (data.round_name && !state.status.round_name) {
+                        state.status.round_name = data.round_name;
+                    }
+                    if (data.current_round && !state.status.current_round) {
+                        state.status.current_round = data.current_round;
+                    }
                 }
-                if (data.allow_all_balloons !== undefined && !hasLocalSettings) {
-                    state.allowAllBalloons = (data.allow_all_balloons === true || data.allow_all_balloons === "true");
-                }
-                chkShowZero.checked = state.showZero;
-                chkShowTotal.checked = state.showTotal;
+
+                if (chkShowZero) chkShowZero.checked = state.showZero;
+                if (chkShowTotal) chkShowTotal.checked = state.showTotal;
                 if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
                 updateFlabsToggleUI();
                 updateFlabsIndicator();
                 updateBalloonFilterUI();
-                if (roundNameInput) roundNameInput.value = data.round_name || `${data.current_round || 1}라운드`;
-                saveSettingsToStorage();
+                if (roundNameInput && !roundNameInput.matches(':focus')) {
+                    roundNameInput.value = state.status.round_name || `${state.status.current_round || 1}라운드`;
+                }
                 updateBroadcastUI();
             }
         } catch (e) {
@@ -1397,24 +1443,47 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Actions ---
     btnBroadcastToggle.onclick = async () => {
+        lastBroadcastToggleTime = Date.now();
         const newActive = !state.status.broadcast_active;
         state.status.broadcast_active = newActive;
-        state.status.broadcast_started_at = newActive ? getSeoulTimeStr() : "";
+        state.status.broadcast_started_at = newActive ? (state.status.broadcast_started_at || getSeoulTimeStr()) : "";
         state.status.elapsed = "00:00:00";
         saveSettingsToStorage();
         updateBroadcastUI();
         showToast(newActive ? "▶️ 방송이 시작되었습니다." : "⏹️ 방송이 종료되었습니다.");
 
+        const payload = {
+            active: newActive,
+            started_at: state.status.broadcast_started_at
+        };
+
         try {
-            const res = await fetch("/api/broadcast/toggle", { method: "POST" });
+            const res = await fetch("/api/broadcast/toggle", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
             if (res.ok) {
                 const data = await res.json();
-                state.status.broadcast_active = data.broadcast_active;
-                state.status.broadcast_started_at = data.broadcast_started_at;
-                saveSettingsToStorage();
-                updateBroadcastUI();
+                if (data.broadcast_active === newActive) {
+                    state.status.broadcast_started_at = data.broadcast_started_at || state.status.broadcast_started_at;
+                    saveSettingsToStorage();
+                    updateBroadcastUI();
+                }
             }
-        } catch (e) {}
+        } catch (e) {
+            console.warn("Toggle broadcast local fallback", e);
+        }
+
+        // Additional sync to settings to guarantee all serverless container instances stay aligned
+        fetch("/api/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                broadcast_active: newActive,
+                broadcast_started_at: state.status.broadcast_started_at
+            })
+        }).catch(() => {});
     };
 
     if (roundNameInput) {
@@ -1992,6 +2061,35 @@ document.addEventListener("DOMContentLoaded", () => {
     loadAlerts();
     checkExternalScore();
     setInterval(checkExternalScore, 3000);
+
+    // Multi-tab sync via storage events
+    window.addEventListener("storage", (e) => {
+        if (e.key === "danbal_settings" && e.newValue) {
+            try {
+                const updated = JSON.parse(e.newValue);
+                if (updated.show_total !== undefined) {
+                    state.showTotal = updated.show_total === true || updated.show_total === "true";
+                    if (chkShowTotal) chkShowTotal.checked = state.showTotal;
+                }
+                if (updated.show_zero_streamers !== undefined) {
+                    state.showZero = updated.show_zero_streamers === true || updated.show_zero_streamers === "true";
+                    if (chkShowZero) chkShowZero.checked = state.showZero;
+                }
+                if (updated.compare_flabs !== undefined) {
+                    state.compareFlabs = updated.compare_flabs === true || updated.compare_flabs === "true";
+                    if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
+                    updateFlabsToggleUI();
+                    updateFlabsIndicator();
+                }
+                if (updated.broadcast_active !== undefined) {
+                    state.status.broadcast_active = updated.broadcast_active === true || updated.broadcast_active === "true";
+                    state.status.broadcast_started_at = updated.broadcast_started_at || "";
+                    updateBroadcastUI();
+                }
+                renderScoreboard();
+            } catch (err) {}
+        }
+    });
 
     // Fallback real-time polling for serverless (e.g. Vercel) where WebSocket is unavailable
     setInterval(() => {
