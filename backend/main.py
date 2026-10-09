@@ -784,16 +784,6 @@ def get_summary():
         if alert_round == cur_round:
             total_current_score += val
         
-        if s_name not in streamer_stats and s_name != "선택":
-            streamer_stats[s_name] = {
-                "name": s_name,
-                "color": "#64748b",
-                "count": 0,
-                "balloons": 0,
-                "current_score": 0,
-                "total_score": 0
-            }
-
         if s_name in streamer_stats:
             streamer_stats[s_name]['count'] += 1
             streamer_stats[s_name]['balloons'] += balloons

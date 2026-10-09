@@ -279,17 +279,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 totalCurrentScore += val;
             }
 
-            if (sName && sName !== "선택") {
-                if (!streamerStats[sName]) {
-                    streamerStats[sName] = {
-                        name: sName,
-                        color: "#64748b",
-                        count: 0,
-                        balloons: 0,
-                        current_score: 0,
-                        total_score: 0
-                    };
-                }
+            if (sName && sName !== "선택" && streamerStats[sName]) {
                 streamerStats[sName].count += 1;
                 streamerStats[sName].balloons += balloons;
                 streamerStats[sName].total_score += val;
@@ -498,11 +488,13 @@ document.addEventListener("DOMContentLoaded", () => {
         renderStreamersManageTable();
         refreshSummary();
 
+        // If user already has custom streamers saved in localStorage, do not let server overwrite them!
+        const hasCustomStored = !!localStorage.getItem("danbal_streamers");
         try {
             const res = await fetch("/api/streamers");
             if (res.ok) {
                 const data = await res.json();
-                if (Array.isArray(data) && data.length > 0) {
+                if (Array.isArray(data) && data.length > 0 && !hasCustomStored) {
                     state.streamers = data;
                     saveStreamersToStorage();
                     renderStreamerDropdowns();
@@ -543,8 +535,14 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch("/api/summary");
             if (res.ok) {
-                state.summary = await res.json();
-                renderScoreboard();
+                const data = await res.json();
+                if (data && Array.isArray(data.streamers)) {
+                    // Strictly keep only streamers that are in state.streamers!
+                    const validNames = new Set((state.streamers || []).map(s => s.name));
+                    data.streamers = data.streamers.filter(s => validNames.has(s.name));
+                    state.summary = data;
+                    renderScoreboard();
+                }
             }
         } catch (e) {}
     }
@@ -771,7 +769,8 @@ document.addEventListener("DOMContentLoaded", () => {
             streamerCardsContainer.appendChild(card);
         });
 
-        if (state.showTotal) {
+        // Only show total card if enabled AND there are multiple streamers (if only 1 streamer, the single card already represents total)
+        if (state.showTotal && (state.summary.streamers && state.summary.streamers.length > 1)) {
             const tot = state.summary.total;
             const card = document.createElement("div");
             card.className = "streamer-card total-card";
@@ -1141,11 +1140,12 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.onclick = async () => {
                 const id = btn.dataset.id;
                 if (confirm("이 스트리머를 삭제하시겠습니까?")) {
-                    state.streamers = state.streamers.filter(x => x.id != id);
+                    state.streamers = state.streamers.filter(x => String(x.id) !== String(id));
                     saveStreamersToStorage();
                     renderStreamerDropdowns();
                     renderStreamersManageTable();
-                    refreshSummary();
+                    state.summary = computeSummary();
+                    renderScoreboard();
                     showToast("🗑️ 스트리머가 삭제되었습니다.");
 
                     try {
