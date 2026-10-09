@@ -579,6 +579,199 @@ body {
     background: #fecaca;
 }
 
+/* Roulette Balloon Recognition Filter Toolbar */
+.roulette-filter-toolbar {
+    background: #f0f7ff;
+    border: 1.5px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.06);
+}
+
+.filter-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    flex: 1 1 auto;
+}
+
+.filter-label-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #1e3a8a;
+    white-space: nowrap;
+}
+
+.filter-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 340px;
+}
+
+.roulette-balloons-input {
+    flex: 1;
+    min-width: 260px;
+    padding: 6px 12px;
+    background: #ffffff;
+    border: 1.5px solid #93c5fd;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #1d4ed8;
+    outline: none;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+}
+
+.roulette-balloons-input:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+    background: #ffffff;
+}
+
+.roulette-balloons-input.disabled-mode {
+    background: #f1f5f9;
+    color: #94a3b8;
+    border-color: #cbd5e1;
+    cursor: not-allowed;
+}
+
+.btn-filter-sub {
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-filter-sub:hover {
+    background: #bae6fd;
+    color: #0284c7;
+}
+
+.filter-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.btn-toggle-all-balloons {
+    background: #f8fafc;
+    border: 1.5px solid #cbd5e1;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.btn-toggle-all-balloons:hover {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+}
+
+.btn-toggle-all-balloons.on {
+    background: #ecfdf5;
+    border-color: #10b981;
+    color: #065f46;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
+}
+
+.btn-toggle-all-balloons.on .toggle-status-badge {
+    background: #10b981;
+    color: #ffffff;
+}
+
+.btn-toggle-all-balloons.off .toggle-status-badge {
+    background: #64748b;
+    color: #ffffff;
+}
+
+.filter-status-desc {
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+
+/* Balloon cell wrapper with roulette badge */
+.balloons-cell-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+}
+
+.badge-roulette-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 4px;
+    letter-spacing: -0.3px;
+}
+
+.badge-roulette-tag.is-roulette {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+
+.badge-roulette-tag.not-roulette {
+    background: #f1f5f9;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+}
+
+/* Row excluded from roulette calculation */
+tr.row-excluded-balloons {
+    background-color: #fafafa !important;
+}
+
+tr.row-excluded-balloons td {
+    color: #64748b;
+}
+
+tr.row-excluded-balloons .contrib-val {
+    color: #94a3b8 !important;
+    background: #f1f5f9 !important;
+}
+
+tr.row-excluded-balloons .btn-sign-toggle {
+    opacity: 0.5;
+}
+
 /* Roulette Table */
 .table-wrapper {
     overflow-x: auto;

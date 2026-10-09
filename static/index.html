@@ -118,6 +118,33 @@
                 </div>
             </div>
 
+            <!-- Roulette Balloon Filter Control Toolbar -->
+            <div class="roulette-filter-toolbar">
+                <div class="filter-toolbar-left">
+                    <div class="filter-label-group">
+                        <i class="fa-solid fa-dice text-blue"></i>
+                        <span class="filter-title">룰렛 인식 풍 개수:</span>
+                    </div>
+                    <div class="filter-input-wrap">
+                        <input type="text" id="roulette-balloons-input" class="roulette-balloons-input" 
+                               value="500, 501, 1000, 1001, 3000, 3001, 5000, 5001" 
+                               placeholder="500, 501, 1000, 1001, 3000, 3001, 5000, 5001"
+                               title="룰렛이 돌아가는 별풍선 개수를 입력하세요 (쉼표로 구분)">
+                        <button id="btn-reset-default-balloons" class="btn-filter-sub" title="기본 개수(500, 501, 1000, 1001, 3000, 3001, 5000, 5001)로 복원">
+                            <i class="fa-solid fa-rotate-left"></i> 기본값
+                        </button>
+                    </div>
+                </div>
+                <div class="filter-toolbar-right">
+                    <button id="btn-toggle-all-balloons" class="btn-toggle-all-balloons off" title="모든 풍 개수를 룰렛 기여도로 계산할지 여부를 전환합니다 (클릭 시 ON/OFF)">
+                        <i class="fa-solid fa-layer-group"></i> 전부 다 인식: <span id="all-balloons-status-text" class="toggle-status-badge">OFF</span>
+                    </button>
+                    <span id="roulette-filter-status-desc" class="filter-status-desc">
+                        <i class="fa-solid fa-circle-check text-green"></i> <span id="filter-status-count-text">지정된 8개 풍만 기여도 계산 중</span>
+                    </span>
+                </div>
+            </div>
+
             <!-- Table Wrapper -->
             <div class="table-wrapper">
                 <table class="roulette-table" id="roulette-table">

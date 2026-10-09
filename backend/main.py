@@ -374,6 +374,8 @@ def get_status():
         "show_zero_streamers": (settings.get('show_zero_streamers') == 'true'),
         "show_total": (settings.get('show_total', 'true') == 'true'),
         "compare_flabs": (settings.get('compare_flabs', 'true') == 'true'),
+        "roulette_balloons": settings.get('roulette_balloons', '500, 501, 1000, 1001, 3000, 3001, 5000, 5001'),
+        "allow_all_balloons": (settings.get('allow_all_balloons', 'false') == 'true'),
         "current_round": current_round,
         "round_name": round_name
     }
@@ -561,11 +563,25 @@ async def ingest_alert(req: AlertIngestRequest):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT key, value FROM settings WHERE key IN ('broadcast_active', 'broadcast_started_at', 'current_round')")
+    cursor.execute("SELECT key, value FROM settings WHERE key IN ('broadcast_active', 'broadcast_started_at', 'current_round', 'roulette_balloons', 'allow_all_balloons')")
     settings = {r['key']: r['value'] for r in cursor.fetchall()}
     is_active = (settings.get('broadcast_active') == 'true')
     started_at = settings.get('broadcast_started_at', '')
     cur_round = int(settings.get('current_round', '1'))
+    allow_all = (settings.get('allow_all_balloons', 'false') == 'true')
+    raw_balloons = settings.get('roulette_balloons', '500, 501, 1000, 1001, 3000, 3001, 5000, 5001')
+
+    import re
+    recognized_balloons = set()
+    for token in re.split(r'[, \s]+', raw_balloons):
+        digits = re.sub(r'[^0-9]', '', token)
+        if digits:
+            recognized_balloons.add(int(digits))
+    if not recognized_balloons:
+        recognized_balloons = {500, 501, 1000, 1001, 3000, 3001, 5000, 5001}
+
+    b_count = req.balloons or 0
+    is_roulette_qualifying = allow_all or (b_count in recognized_balloons) or (b_count == 0 and req.external_id and str(req.external_id).startswith('manual_'))
     
     seoul_time = req.created_at or get_current_seoul_time()
     elapsed = calculate_broadcast_elapsed(started_at) if (is_active and started_at) else "미시작"
@@ -584,6 +600,9 @@ async def ingest_alert(req: AlertIngestRequest):
     else:
         roulette_val = parsed_roulette['value']
         roulette_sign = parsed_roulette['sign']
+
+    if not is_roulette_qualifying:
+        roulette_val = 0
 
     # Auto-matching streamer from chat if streamer_name is empty or '선택'
     assigned_streamer = req.streamer_name
@@ -743,13 +762,22 @@ def get_summary():
     cursor.execute("SELECT * FROM streamers ORDER BY order_index ASC")
     streamers = [dict(s) for s in cursor.fetchall()]
     
-    cursor.execute("SELECT value FROM settings WHERE key = 'current_round'")
-    row_round = cursor.fetchone()
-    cur_round = int(row_round['value']) if row_round else 1
+    cursor.execute("SELECT key, value FROM settings WHERE key IN ('current_round', 'round_name', 'roulette_balloons', 'allow_all_balloons')")
+    settings_dict = {r['key']: r['value'] for r in cursor.fetchall()}
+    
+    cur_round = int(settings_dict.get('current_round', '1'))
+    rname = settings_dict.get('round_name', f"{cur_round}라운드")
+    allow_all = (settings_dict.get('allow_all_balloons', 'false') == 'true')
+    raw_balloons = settings_dict.get('roulette_balloons', '500, 501, 1000, 1001, 3000, 3001, 5000, 5001')
 
-    cursor.execute("SELECT value FROM settings WHERE key = 'round_name'")
-    row_rname = cursor.fetchone()
-    rname = row_rname['value'] if row_rname else f"{cur_round}라운드"
+    import re
+    recognized_balloons = set()
+    for token in re.split(r'[, \s]+', raw_balloons):
+        digits = re.sub(r'[^0-9]', '', token)
+        if digits:
+            recognized_balloons.add(int(digits))
+    if not recognized_balloons:
+        recognized_balloons = {500, 501, 1000, 1001, 3000, 3001, 5000, 5001}
 
     # CRITICAL: Exclude example rows (is_example = 1) from all calculations!
     cursor.execute("SELECT * FROM alerts WHERE status = 'active' AND (is_example IS NULL OR is_example = 0)")
@@ -773,6 +801,13 @@ def get_summary():
     total_count = 0
     
     for a in alerts:
+        balloons = a['balloons'] or 0
+        ext_id = str(a.get('external_id') or '')
+        val = a['roulette_value'] or 0
+        is_roulette = allow_all or (balloons in recognized_balloons) or (balloons == 0 and ext_id.startswith('manual_') and val != 0)
+        if not is_roulette:
+            continue
+
         s_name = a['streamer_name']
         val = a['roulette_value']
         balloons = a['balloons']

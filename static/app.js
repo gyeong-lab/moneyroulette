@@ -49,6 +49,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return {};
     }
 
+    const DEFAULT_ROULETTE_BALLOONS = "500, 501, 1000, 1001, 3000, 3001, 5000, 5001";
+
     function saveSettingsToStorage() {
         try {
             localStorage.setItem("danbal_settings", JSON.stringify({
@@ -58,7 +60,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 round_name: state.status.round_name,
                 show_zero_streamers: state.showZero,
                 show_total: state.showTotal,
-                compare_flabs: state.compareFlabs
+                compare_flabs: state.compareFlabs,
+                roulette_balloons: state.rouletteBalloons,
+                allow_all_balloons: state.allowAllBalloons
             }));
         } catch (e) {}
     }
@@ -92,6 +96,8 @@ document.addEventListener("DOMContentLoaded", () => {
         showZero: savedSettings.show_zero_streamers !== false && savedSettings.show_zero_streamers !== "false",
         showTotal: savedSettings.show_total !== false && savedSettings.show_total !== "false",
         compareFlabs: savedSettings.compare_flabs !== false && savedSettings.compare_flabs !== "false",
+        rouletteBalloons: savedSettings.roulette_balloons || DEFAULT_ROULETTE_BALLOONS,
+        allowAllBalloons: savedSettings.allow_all_balloons === true || savedSettings.allow_all_balloons === "true",
         manualSign: "+"
     };
 
@@ -115,6 +121,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const streamerCardsContainer = document.getElementById("streamer-cards-container");
     const alertsTbody = document.getElementById("alerts-tbody");
     const btnClearExamples = document.getElementById("btn-clear-examples");
+
+    // Roulette Balloons Filter elements
+    const rouletteBalloonsInput = document.getElementById("roulette-balloons-input");
+    const btnResetDefaultBalloons = document.getElementById("btn-reset-default-balloons");
+    const btnToggleAllBalloons = document.getElementById("btn-toggle-all-balloons");
+    const allBalloonsStatusText = document.getElementById("all-balloons-status-text");
+    const filterStatusCountText = document.getElementById("filter-status-count-text");
 
     // Manual Row elements
     const manualNowBadge = document.getElementById("manual-now-badge");
@@ -244,6 +257,33 @@ document.addEventListener("DOMContentLoaded", () => {
         return lastMatch || "선택";
     }
 
+    function getRecognizedBalloonSet() {
+        const raw = state.rouletteBalloons || DEFAULT_ROULETTE_BALLOONS;
+        const set = new Set();
+        raw.split(/[,\s]+/).forEach(token => {
+            const digits = token.replace(/[^0-9]/g, '');
+            const n = parseInt(digits);
+            if (!isNaN(n) && n > 0) {
+                set.add(n);
+            }
+        });
+        return set.size > 0 ? set : new Set([500, 501, 1000, 1001, 3000, 3001, 5000, 5001]);
+    }
+
+    function isRouletteAlert(alert) {
+        if (state.allowAllBalloons) return true;
+        const b = parseInt(alert.balloons) || 0;
+        if (b > 0) {
+            const recognized = getRecognizedBalloonSet();
+            return recognized.has(b);
+        }
+        // If balloon count is 0 but it's a manual entry with non-zero contribution, treat as manual score adjustment
+        if (b === 0 && alert.external_id && String(alert.external_id).startsWith("manual_") && (parseInt(alert.roulette_value) || 0) !== 0) {
+            return true;
+        }
+        return false;
+    }
+
     function computeSummary() {
         const curRound = parseInt(state.status.current_round) || 1;
         const rname = state.status.round_name || `${curRound}라운드`;
@@ -267,6 +307,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const activeAlerts = (state.alerts || []).filter(a => a.status === 'active' && !a.is_example);
         activeAlerts.forEach(a => {
+            // ONLY qualifying roulette balloon alerts count toward roulette contribution!
+            const isRoulette = isRouletteAlert(a);
+            if (!isRoulette) {
+                return;
+            }
+
             const sName = a.streamer_name;
             const val = parseInt(a.roulette_value) || 0;
             const balloons = parseInt(a.balloons) || 0;
@@ -435,7 +481,16 @@ document.addEventListener("DOMContentLoaded", () => {
                         updateFlabsToggleUI();
                         updateFlabsIndicator();
                     }
+                    if (msg.data.roulette_balloons !== undefined) {
+                        state.rouletteBalloons = msg.data.roulette_balloons;
+                    }
+                    if (msg.data.allow_all_balloons !== undefined) {
+                        state.allowAllBalloons = msg.data.allow_all_balloons === true || msg.data.allow_all_balloons === "true";
+                    }
+                    updateBalloonFilterUI();
                     saveSettingsToStorage();
+                    renderAlerts();
+                    refreshSummary();
                     renderScoreboard();
                 }
                 break;
@@ -455,6 +510,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
         updateFlabsToggleUI();
         updateFlabsIndicator();
+        updateBalloonFilterUI();
         if (roundNameInput) roundNameInput.value = state.status.round_name || `${state.status.current_round || 1}라운드`;
         updateBroadcastUI();
 
@@ -468,11 +524,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.compare_flabs !== undefined) {
                     state.compareFlabs = (data.compare_flabs === true || data.compare_flabs === "true");
                 }
+                const hasLocalSettings = !!localStorage.getItem("danbal_settings");
+                if (data.roulette_balloons !== undefined && !hasLocalSettings) {
+                    state.rouletteBalloons = data.roulette_balloons;
+                }
+                if (data.allow_all_balloons !== undefined && !hasLocalSettings) {
+                    state.allowAllBalloons = (data.allow_all_balloons === true || data.allow_all_balloons === "true");
+                }
                 chkShowZero.checked = state.showZero;
                 chkShowTotal.checked = state.showTotal;
                 if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
                 updateFlabsToggleUI();
                 updateFlabsIndicator();
+                updateBalloonFilterUI();
                 if (roundNameInput) roundNameInput.value = data.round_name || `${data.current_round || 1}라운드`;
                 saveSettingsToStorage();
                 updateBroadcastUI();
@@ -561,6 +625,40 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (chkCompareFlabs) {
             chkCompareFlabs.checked = !!state.compareFlabs;
+        }
+    }
+
+    function updateBalloonFilterUI() {
+        if (rouletteBalloonsInput) {
+            rouletteBalloonsInput.value = state.rouletteBalloons;
+            if (state.allowAllBalloons) {
+                rouletteBalloonsInput.classList.add("disabled-mode");
+                rouletteBalloonsInput.title = "현재 '전부 다 인식' 모드가 켜져 있어 모든 별풍선이 룰렛으로 계산됩니다.";
+            } else {
+                rouletteBalloonsInput.classList.remove("disabled-mode");
+                rouletteBalloonsInput.title = "룰렛이 돌아가는 별풍선 개수를 입력하세요 (쉼표로 구분)";
+            }
+        }
+        if (btnToggleAllBalloons) {
+            if (state.allowAllBalloons) {
+                btnToggleAllBalloons.classList.remove("off");
+                btnToggleAllBalloons.classList.add("on");
+                if (allBalloonsStatusText) allBalloonsStatusText.innerText = "ON";
+                btnToggleAllBalloons.title = "모든 풍 개수를 룰렛으로 인식 중 (클릭 시 지정된 개수만 인식으로 전환)";
+            } else {
+                btnToggleAllBalloons.classList.remove("on");
+                btnToggleAllBalloons.classList.add("off");
+                if (allBalloonsStatusText) allBalloonsStatusText.innerText = "OFF";
+                btnToggleAllBalloons.title = "지정된 풍 개수만 룰렛으로 인식 중 (클릭 시 전부 다 인식으로 전환)";
+            }
+        }
+        if (filterStatusCountText) {
+            if (state.allowAllBalloons) {
+                filterStatusCountText.innerHTML = '<b style="color:#059669;">모든 풍선 전부 룰렛으로 계산 중 (필터 OFF)</b>';
+            } else {
+                const count = getRecognizedBalloonSet().size;
+                filterStatusCountText.innerHTML = `지정된 <b>${count}개</b> 풍만 룰렛 기여도로 계산 중`;
+            }
         }
     }
 
@@ -865,6 +963,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 tr.classList.add("row-example");
             }
 
+            const isRoulette = isRouletteAlert(alert);
+            if (!isRoulette) {
+                tr.classList.add("row-excluded-balloons");
+            }
+
             const isMinus = alert.roulette_sign === "-" || alert.roulette_value < 0;
             const signChar = isMinus ? "-" : "+";
             const absVal = Math.abs(alert.roulette_value || 0);
@@ -909,7 +1012,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     </select>
                 </td>
                 <td class="td-balloons">
-                    <input type="number" class="table-input text-right font-bold alert-balloons-input" data-id="${alert.id}" value="${alert.balloons || 0}">
+                    <div class="balloons-cell-wrap">
+                        <input type="number" class="table-input text-right font-bold alert-balloons-input" data-id="${alert.id}" value="${alert.balloons || 0}">
+                        ${isRoulette ? `
+                            <span class="badge-roulette-tag is-roulette" title="룰렛 인식 대상 풍선"><i class="fa-solid fa-dice"></i> 룰렛</span>
+                        ` : `
+                            <span class="badge-roulette-tag not-roulette" title="룰렛 미인식 풍선 (기여도 계산 제외)"><i class="fa-solid fa-ban"></i> 제외</span>
+                        `}
+                    </div>
                 </td>
                 <td class="td-contrib">
                     <div class="contrib-input-group">
@@ -1501,6 +1611,67 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
+    // --- Roulette Balloon Filter Toolbar Event Handlers ---
+    if (rouletteBalloonsInput) {
+        rouletteBalloonsInput.onblur = (e) => {
+            const val = e.target.value.trim() || DEFAULT_ROULETTE_BALLOONS;
+            state.rouletteBalloons = val;
+            saveSettingsToStorage();
+            updateBalloonFilterUI();
+            renderAlerts();
+            refreshSummary();
+            showToast("🎯 룰렛 인식 풍 개수 설정이 저장되었습니다.");
+            fetch("/api/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ roulette_balloons: state.rouletteBalloons })
+            }).catch(() => {});
+        };
+
+        rouletteBalloonsInput.onkeydown = (e) => {
+            if (e.key === "Enter") {
+                rouletteBalloonsInput.blur();
+            }
+        };
+    }
+
+    if (btnResetDefaultBalloons) {
+        btnResetDefaultBalloons.onclick = () => {
+            state.rouletteBalloons = DEFAULT_ROULETTE_BALLOONS;
+            if (rouletteBalloonsInput) rouletteBalloonsInput.value = DEFAULT_ROULETTE_BALLOONS;
+            saveSettingsToStorage();
+            updateBalloonFilterUI();
+            renderAlerts();
+            refreshSummary();
+            showToast("🔄 룰렛 인식 개수가 기본값(500, 501, 1000...)으로 복원되었습니다.");
+            fetch("/api/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ roulette_balloons: state.rouletteBalloons })
+            }).catch(() => {});
+        };
+    }
+
+    if (btnToggleAllBalloons) {
+        btnToggleAllBalloons.onclick = () => {
+            state.allowAllBalloons = !state.allowAllBalloons;
+            saveSettingsToStorage();
+            updateBalloonFilterUI();
+            renderAlerts();
+            refreshSummary();
+            if (state.allowAllBalloons) {
+                showToast("🔔 [전부 다 인식 ON] 모든 별풍선을 룰렛으로 계산합니다.");
+            } else {
+                showToast("🎯 [전부 다 인식 OFF] 지정된 개수의 별풍선만 룰렛으로 계산합니다.");
+            }
+            fetch("/api/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ allow_all_balloons: state.allowAllBalloons })
+            }).catch(() => {});
+        };
+    }
+
     // Excel Export (Dual Mode: Server API with Client-side SheetJS Fallback)
     btnExportExcel.onclick = async () => {
         // Try server API first if running locally
@@ -1522,10 +1693,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // 1. 후원목록 시트
         const donationRows = [
-            ['ID', '시간', '방송시간', '닉네임', '아이디', '후원스트리머', '풍선종류', '개수', '기여도', '원플원', '채팅']
+            ['ID', '시간', '방송시간', '닉네임', '아이디', '후원스트리머', '풍선종류', '개수', '룰렛인식여부', '기여도', '원플원', '채팅']
         ];
         const activeAlerts = state.alerts.filter(a => a.status === 'active' && !a.is_example);
         activeAlerts.forEach(a => {
+            const isR = isRouletteAlert(a);
             donationRows.push([
                 a.id,
                 a.created_at || '',
@@ -1535,7 +1707,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 a.streamer_name || '',
                 '별풍선',
                 a.balloons || 0,
-                a.roulette_value || 0,
+                isR ? '룰렛인식' : '일반풍(제외)',
+                isR ? (a.roulette_value || 0) : 0,
                 a.multiplier || '기본배수',
                 a.chat_message || ''
             ]);
@@ -1589,7 +1762,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     round_name: state.status.round_name,
                     show_zero_streamers: state.showZero,
                     show_total: state.showTotal,
-                    compare_flabs: state.compareFlabs
+                    compare_flabs: state.compareFlabs,
+                    roulette_balloons: state.rouletteBalloons,
+                    allow_all_balloons: state.allowAllBalloons
                 }
             };
             const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
@@ -1639,11 +1814,18 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (data.settings.compare_flabs !== undefined) {
                         state.compareFlabs = data.settings.compare_flabs !== false && data.settings.compare_flabs !== "false";
                     }
+                    if (data.settings.roulette_balloons !== undefined) {
+                        state.rouletteBalloons = data.settings.roulette_balloons;
+                    }
+                    if (data.settings.allow_all_balloons !== undefined) {
+                        state.allowAllBalloons = data.settings.allow_all_balloons === true || data.settings.allow_all_balloons === "true";
+                    }
                     chkShowZero.checked = state.showZero;
                     chkShowTotal.checked = state.showTotal;
                     if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
                     updateFlabsToggleUI();
                     updateFlabsIndicator();
+                    updateBalloonFilterUI();
                     if (roundNameInput) roundNameInput.value = state.status.round_name;
                 }
                 saveStreamersToStorage();
