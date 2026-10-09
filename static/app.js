@@ -57,7 +57,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 current_round: state.status.current_round,
                 round_name: state.status.round_name,
                 show_zero_streamers: state.showZero,
-                show_total: state.showTotal
+                show_total: state.showTotal,
+                compare_flabs: state.compareFlabs
             }));
         } catch (e) {}
     }
@@ -90,6 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
         },
         showZero: savedSettings.show_zero_streamers !== false && savedSettings.show_zero_streamers !== "false",
         showTotal: savedSettings.show_total !== false && savedSettings.show_total !== "false",
+        compareFlabs: savedSettings.compare_flabs !== false && savedSettings.compare_flabs !== "false",
         manualSign: "+"
     };
 
@@ -98,6 +100,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- DOM Elements ---
     const flabsStatusPill = document.getElementById("flabs-status-pill");
     const flabsStatusText = document.getElementById("flabs-status-text");
+    const btnToggleFlabsCompare = document.getElementById("btn-toggle-flabs-compare");
+    const flabsToggleStatusText = document.getElementById("flabs-toggle-status-text");
     const btnBroadcastToggle = document.getElementById("btn-broadcast-toggle");
     const broadcastStatusText = document.getElementById("broadcast-status-text");
     const broadcastTimerBadge = document.getElementById("broadcast-timer-badge");
@@ -107,6 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const roundNameInput = document.getElementById("round-name-input");
     const chkShowZero = document.getElementById("chk-show-zero");
     const chkShowTotal = document.getElementById("chk-show-total");
+    const chkCompareFlabs = document.getElementById("chk-compare-flabs");
     const streamerCardsContainer = document.getElementById("streamer-cards-container");
     const alertsTbody = document.getElementById("alerts-tbody");
     const btnClearExamples = document.getElementById("btn-clear-examples");
@@ -425,6 +430,25 @@ document.addEventListener("DOMContentLoaded", () => {
                 updateFlabsIndicator();
                 renderScoreboard();
                 break;
+            case "SETTINGS_CHANGED":
+                if (msg.data) {
+                    if (msg.data.show_zero_streamers !== undefined) {
+                        state.showZero = msg.data.show_zero_streamers === true || msg.data.show_zero_streamers === "true";
+                        if (chkShowZero) chkShowZero.checked = state.showZero;
+                    }
+                    if (msg.data.show_total !== undefined) {
+                        state.showTotal = msg.data.show_total === true || msg.data.show_total === "true";
+                        if (chkShowTotal) chkShowTotal.checked = state.showTotal;
+                    }
+                    if (msg.data.compare_flabs !== undefined) {
+                        state.compareFlabs = msg.data.compare_flabs === true || msg.data.compare_flabs === "true";
+                        updateFlabsToggleUI();
+                        updateFlabsIndicator();
+                    }
+                    saveSettingsToStorage();
+                    renderScoreboard();
+                }
+                break;
             case "STATUS_CHANGE":
                 state.status.broadcast_active = msg.data.broadcast_active;
                 state.status.broadcast_started_at = msg.data.broadcast_started_at;
@@ -438,6 +462,9 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadStatus() {
         chkShowZero.checked = state.showZero;
         chkShowTotal.checked = state.showTotal;
+        if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
+        updateFlabsToggleUI();
+        updateFlabsIndicator();
         if (roundNameInput) roundNameInput.value = state.status.round_name || `${state.status.current_round || 1}라운드`;
         updateBroadcastUI();
 
@@ -448,8 +475,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 state.status = data;
                 state.showZero = data.show_zero_streamers;
                 state.showTotal = data.show_total;
+                if (data.compare_flabs !== undefined) {
+                    state.compareFlabs = (data.compare_flabs === true || data.compare_flabs === "true");
+                }
                 chkShowZero.checked = state.showZero;
                 chkShowTotal.checked = state.showTotal;
+                if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
+                updateFlabsToggleUI();
+                updateFlabsIndicator();
                 if (roundNameInput) roundNameInput.value = data.round_name || `${data.current_round || 1}라운드`;
                 saveSettingsToStorage();
                 updateBroadcastUI();
@@ -527,12 +560,57 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {}
     }
 
+    function updateFlabsToggleUI() {
+        if (btnToggleFlabsCompare) {
+            if (state.compareFlabs) {
+                btnToggleFlabsCompare.classList.remove("off");
+                btnToggleFlabsCompare.classList.add("on");
+                if (flabsToggleStatusText) flabsToggleStatusText.innerText = "ON";
+                btnToggleFlabsCompare.title = "score.flabs.kr 점수판 비교 활성화됨 (클릭 시 끄기)";
+            } else {
+                btnToggleFlabsCompare.classList.remove("on");
+                btnToggleFlabsCompare.classList.add("off");
+                if (flabsToggleStatusText) flabsToggleStatusText.innerText = "OFF";
+                btnToggleFlabsCompare.title = "score.flabs.kr 점수판 비교 꺼짐 (클릭 시 켜기)";
+            }
+        }
+        if (chkCompareFlabs) {
+            chkCompareFlabs.checked = !!state.compareFlabs;
+        }
+    }
+
+    function setCompareFlabs(enabled, showNotification = true) {
+        state.compareFlabs = !!enabled;
+        saveSettingsToStorage();
+        updateFlabsToggleUI();
+        updateFlabsIndicator();
+        renderScoreboard();
+        fetch("/api/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ compare_flabs: state.compareFlabs })
+        }).catch(() => {});
+        if (showNotification) {
+            if (state.compareFlabs) {
+                showToast("🔔 점수판(score.flabs.kr) 비교가 켜졌습니다. (불일치 시 빨간색 강조)");
+            } else {
+                showToast("🔕 점수판 비교가 꺼졌습니다. (빨간색 불일치 표시 해제)");
+            }
+        }
+    }
+
     function updateFlabsIndicator() {
         if (!flabsStatusPill || !flabsStatusText) return;
+        if (!state.compareFlabs) {
+            flabsStatusPill.className = "flabs-status-pill flabs-disabled";
+            flabsStatusPill.innerHTML = '<i class="fa-solid fa-power-off"></i> <span>점수판 비교 OFF</span>';
+            flabsStatusPill.title = "score.flabs.kr 점수판 비교가 꺼져 있습니다. (클릭하면 켭니다)";
+            return;
+        }
         if (!state.externalScore || !state.externalScore.connected) {
             flabsStatusPill.className = "flabs-status-pill";
             flabsStatusPill.innerHTML = '<i class="fa-solid fa-scale-balanced"></i> <span>점수판 대기중</span>';
-            flabsStatusPill.title = "score.flabs.kr 점수판 창을 로그인해서 열어두시면 실시간 자동 비교됩니다.";
+            flabsStatusPill.title = "score.flabs.kr 점수판 창을 로그인해서 열어두시면 실시간 자동 비교됩니다. (클릭 시 비교 OFF)";
             return;
         }
 
@@ -564,11 +642,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (hasMismatch) {
             flabsStatusPill.className = "flabs-status-pill mismatch-detected";
             flabsStatusPill.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>점수판 불일치! (${modeText})</span>`;
-            flabsStatusPill.title = "점수판(score.flabs.kr)과 숫자가 다른 스트리머가 있습니다! 빨간색 카드를 확인하세요.";
+            flabsStatusPill.title = "점수판(score.flabs.kr)과 숫자가 다른 스트리머가 있습니다! 빨간색 카드를 확인하세요. (클릭 시 비교 OFF)";
         } else {
             flabsStatusPill.className = "flabs-status-pill connected";
             flabsStatusPill.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>점수판 일치 (${modeText})</span>`;
-            flabsStatusPill.title = "score.flabs.kr 점수판과 모든 스트리머 점수가 일치합니다.";
+            flabsStatusPill.title = "score.flabs.kr 점수판과 모든 스트리머 점수가 일치합니다. (클릭 시 비교 OFF)";
         }
     }
 
@@ -600,7 +678,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!streamerCardsContainer) return;
         streamerCardsContainer.innerHTML = "";
 
-        const extConnected = state.externalScore && state.externalScore.connected;
+        const extConnected = state.compareFlabs && state.externalScore && state.externalScore.connected;
         const useNet = state.externalScore && state.externalScore.baseline_active;
         const extStreamers = (useNet && state.externalScore.net_streamers) ? state.externalScore.net_streamers : ((state.externalScore && state.externalScore.streamers) || {});
 
@@ -1398,6 +1476,24 @@ document.addEventListener("DOMContentLoaded", () => {
         }).catch(() => {});
     };
 
+    if (chkCompareFlabs) {
+        chkCompareFlabs.onchange = (e) => {
+            setCompareFlabs(e.target.checked);
+        };
+    }
+
+    if (btnToggleFlabsCompare) {
+        btnToggleFlabsCompare.onclick = () => {
+            setCompareFlabs(!state.compareFlabs);
+        };
+    }
+
+    if (flabsStatusPill) {
+        flabsStatusPill.onclick = () => {
+            setCompareFlabs(!state.compareFlabs);
+        };
+    }
+
     // Excel Export (Dual Mode: Server API with Client-side SheetJS Fallback)
     btnExportExcel.onclick = async () => {
         // Try server API first if running locally
@@ -1485,7 +1581,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     current_round: state.status.current_round,
                     round_name: state.status.round_name,
                     show_zero_streamers: state.showZero,
-                    show_total: state.showTotal
+                    show_total: state.showTotal,
+                    compare_flabs: state.compareFlabs
                 }
             };
             const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
@@ -1532,8 +1629,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     state.status.broadcast_started_at = data.settings.broadcast_started_at || "";
                     state.showZero = data.settings.show_zero_streamers !== false && data.settings.show_zero_streamers !== "false";
                     state.showTotal = data.settings.show_total !== false && data.settings.show_total !== "false";
+                    if (data.settings.compare_flabs !== undefined) {
+                        state.compareFlabs = data.settings.compare_flabs !== false && data.settings.compare_flabs !== "false";
+                    }
                     chkShowZero.checked = state.showZero;
                     chkShowTotal.checked = state.showTotal;
+                    if (chkCompareFlabs) chkCompareFlabs.checked = state.compareFlabs;
+                    updateFlabsToggleUI();
+                    updateFlabsIndicator();
                     if (roundNameInput) roundNameInput.value = state.status.round_name;
                 }
                 saveStreamersToStorage();

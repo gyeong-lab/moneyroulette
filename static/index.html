@@ -24,10 +24,6 @@
                 <i class="fa-solid fa-arrows-rotate"></i> 기여도 초기화
             </button>
 
-            <button id="btn-save-project" class="btn-pill btn-save">
-                <i class="fa-solid fa-floppy-disk"></i> 프로젝트 저장
-            </button>
-
             <div class="nav-checkboxes">
                 <label class="custom-checkbox">
                     <input type="checkbox" id="chk-show-zero" checked>
@@ -36,6 +32,10 @@
                 <label class="custom-checkbox">
                     <input type="checkbox" id="chk-show-total" checked>
                     <span class="label-text">총합 표시</span>
+                </label>
+                <label class="custom-checkbox" title="score.flabs.kr 점수판 비교 및 불일치 빨간색 강조 ON/OFF">
+                    <input type="checkbox" id="chk-compare-flabs" checked>
+                    <span class="label-text">점수판 비교</span>
                 </label>
             </div>
 
@@ -58,7 +58,10 @@
             <button id="btn-open-sync" class="btn-pill btn-outline">
                 <i class="fa-solid fa-satellite-dish"></i> 위플랩/점수판 연동
             </button>
-            <div id="flabs-status-pill" class="flabs-status-pill" title="score.flabs.kr 점수판 창을 열어두시면 시작시점 이후 변화량을 실시간 비교합니다">
+            <button id="btn-toggle-flabs-compare" class="btn-pill btn-toggle-flabs on" title="score.flabs.kr 점수판 비교 ON/OFF (불일치 시 빨간색 표시 켜기/끄기)">
+                <i class="fa-solid fa-scale-balanced"></i> 점수판 비교: <span id="flabs-toggle-status-text" class="toggle-status-badge">ON</span>
+            </button>
+            <div id="flabs-status-pill" class="flabs-status-pill" title="score.flabs.kr 점수판 비교 상태 (클릭 시 ON/OFF 전환)">
                 <i class="fa-solid fa-scale-balanced"></i>
                 <span id="flabs-status-text">점수판 대기중</span>
             </div>
@@ -270,7 +273,7 @@
                         <li>
                             <b>점수판 실시간 비교</b>: <b>https://score.flabs.kr/</b>에 로그인하여 열어두기만 하면, 점수판 점수와 우리 대시보드 점수를 1~2초마다 자동 비교합니다!
                             <div style="margin-top: 4px; font-size: 12px; color: #dc2626; font-weight: bold;">
-                                ★ 숫자가 다른 스트리머가 발견되면 카드가 즉시 빨간색으로 깜빡이며 차이점이 표시됩니다!
+                                ★ 숫자가 다른 스트리머가 발견되면 카드가 즉시 빨간색으로 강조되며 차이점이 표시됩니다! (상단 <b>[점수판 비교 ON/OFF]</b> 버튼으로 언제든 켜고 끌 수 있습니다)
                             </div>
                         </li>
                     </ol>

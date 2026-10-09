@@ -373,6 +373,7 @@ def get_status():
         "seoul_time": get_current_seoul_time(),
         "show_zero_streamers": (settings.get('show_zero_streamers') == 'true'),
         "show_total": (settings.get('show_total', 'true') == 'true'),
+        "compare_flabs": (settings.get('compare_flabs', 'true') == 'true'),
         "current_round": current_round,
         "round_name": round_name
     }

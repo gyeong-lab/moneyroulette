@@ -438,6 +438,58 @@ body {
     color: #16a34a;
 }
 
+/* External Scoreboard Comparison ON/OFF Toggle Button */
+.btn-toggle-flabs {
+    background: #f8fafc;
+    border: 1.5px solid #cbd5e1;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.btn-toggle-flabs:hover {
+    filter: brightness(0.97);
+}
+
+.btn-toggle-flabs.on {
+    background: #ecfdf5;
+    border-color: #10b981;
+    color: #047857;
+    box-shadow: 0 1px 3px rgba(16, 185, 129, 0.2);
+}
+
+.btn-toggle-flabs.off {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #64748b;
+}
+
+.toggle-status-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.2;
+    transition: all 0.2s;
+}
+
+.btn-toggle-flabs.on .toggle-status-badge {
+    background: #10b981;
+    color: #ffffff;
+}
+
+.btn-toggle-flabs.off .toggle-status-badge {
+    background: #94a3b8;
+    color: #ffffff;
+}
+
 /* Status indicator pill in header */
 .flabs-status-pill {
     display: inline-flex;
@@ -451,6 +503,12 @@ body {
     background: #f8fafc;
     color: #475569;
     transition: all 0.2s;
+    cursor: pointer;
+    user-select: none;
+}
+
+.flabs-status-pill:hover {
+    filter: brightness(0.95);
 }
 
 .flabs-status-pill.connected {
@@ -464,6 +522,12 @@ body {
     border-color: #fca5a5;
     color: #991b1b;
     animation: pulse-mismatch 2s infinite ease-in-out;
+}
+
+.flabs-status-pill.flabs-disabled {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #94a3b8;
 }
 
 /* Table Section */
