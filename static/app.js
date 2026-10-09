@@ -1167,14 +1167,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function deleteAlert(id) {
         if (!id) return;
-        state.alerts = state.alerts.filter(a => String(a.id) !== String(id));
+
+        // Robust match: find alert by id, string id, or external_id
+        const targetAlert = state.alerts.find(a => 
+            String(a.id) === String(id) || 
+            (a.external_id && String(a.external_id) === String(id)) ||
+            (a.external_id && a.external_id === `manual_${id}`)
+        );
+        const backendId = targetAlert ? targetAlert.id : id;
+
+        state.alerts = state.alerts.filter(a => {
+            if (targetAlert && a === targetAlert) return false;
+            if (String(a.id) === String(id)) return false;
+            if (a.external_id && String(a.external_id) === String(id)) return false;
+            if (a.external_id && a.external_id === `manual_${id}`) return false;
+            return true;
+        });
+
         saveAlertsToStorage();
         renderAlerts();
         refreshSummary();
         showToast("🗑️ 후원 내역이 삭제되었습니다.");
 
         try {
-            await fetch(`/api/alerts/${id}`, { method: "DELETE" });
+            await fetch(`/api/alerts/${backendId}`, { method: "DELETE" });
         } catch (e) {}
     }
 
@@ -1294,19 +1310,17 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll(".btn-del-streamer").forEach(btn => {
             btn.onclick = async () => {
                 const id = btn.dataset.id;
-                if (confirm("이 스트리머를 삭제하시겠습니까?")) {
-                    state.streamers = state.streamers.filter(x => String(x.id) !== String(id));
-                    saveStreamersToStorage();
-                    renderStreamerDropdowns();
-                    renderStreamersManageTable();
-                    state.summary = computeSummary();
-                    renderScoreboard();
-                    showToast("🗑️ 스트리머가 삭제되었습니다.");
+                state.streamers = state.streamers.filter(x => String(x.id) !== String(id));
+                saveStreamersToStorage();
+                renderStreamerDropdowns();
+                renderStreamersManageTable();
+                state.summary = computeSummary();
+                renderScoreboard();
+                showToast("🗑️ 스트리머가 삭제되었습니다.");
 
-                    try {
-                        await fetch(`/api/streamers/${id}`, { method: "DELETE" });
-                    } catch (e) {}
-                }
+                try {
+                    await fetch(`/api/streamers/${id}`, { method: "DELETE" });
+                } catch (e) {}
             };
         });
 
@@ -1543,8 +1557,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.alert && data.alert.id) {
+                        const oldId = newAlert.id;
                         newAlert.id = data.alert.id;
                         saveAlertsToStorage();
+                        const row = document.querySelector(`tr[data-id="${oldId}"]`);
+                        if (row) {
+                            row.dataset.id = data.alert.id;
+                            row.querySelectorAll(`[data-id="${oldId}"]`).forEach(el => {
+                                el.dataset.id = data.alert.id;
+                            });
+                        }
                     }
                 }
             } catch (e) {}
